@@ -47,5 +47,6 @@ function(set_test_env _testname)
 endfunction()
 
 add_subdirectory(RecoMCTruthLinkers)
+add_subdirectory(TrackingPerformance)
 
 include(cmake/CreateProjectConfig.cmake)

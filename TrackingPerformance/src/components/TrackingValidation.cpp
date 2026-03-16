@@ -1,4 +1,4 @@
-// TrackingValidationConsumer
+// TrackingValidation
 //
 // Validation consumer that writes the following TTrees:
 //   1) finder_particle_to_tracks
@@ -652,7 +652,7 @@ static TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
 }
 
 // ---------- CONSUMER ----------
-struct TrackingValidationConsumer final
+struct TrackingValidation final
     : k4FWCore::Consumer<void(
           const edm4hep::MCParticleCollection&,
           const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>&,  // planar links
@@ -662,7 +662,7 @@ struct TrackingValidationConsumer final
           const std::vector<const edm4hep::TrackCollection*>&                         // optional perfect fitted tracks
           )> {
 
-  TrackingValidationConsumer(const std::string& name, ISvcLocator* svcLoc)
+  TrackingValidation(const std::string& name, ISvcLocator* svcLoc)
       : Consumer(
             name, svcLoc,
             {
@@ -808,7 +808,7 @@ struct TrackingValidationConsumer final
   }
 
   StatusCode finalize() override {
-    info() << "Finalizing TrackingValidationConsumer, wrote " << m_evt << " events" << endmsg;
+    info() << "Finalizing TrackingValidation, wrote " << m_evt << " events" << endmsg;
 
     if (m_outFile) {
       m_outFile->cd();
@@ -1291,4 +1291,4 @@ private:
   mutable FitterTree m_fit_vs_perfect;
 };
 
-DECLARE_COMPONENT(TrackingValidationConsumer)
+DECLARE_COMPONENT(TrackingValidation)
