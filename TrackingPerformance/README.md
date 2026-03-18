@@ -3,7 +3,7 @@
 ## Overview
 
 `TrackingValidation` is a validation algorithm for studying the performance of track finding and track fitting in the tracking reconstruction.
-It is desighned to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking. The algorithm writes validation information to a ROOT output file containing TTrees that can be used later for performance studies and plotting.
+It is desighned to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking. The algorithm writes validation information to a ROOT output file containing TTrees and summary plots that can be used later for performance studies and plotting.
 
 Typical use cases include:
 - validation of track-finder performance,
@@ -14,48 +14,76 @@ Typical use cases include:
 
 ## Inputs
 
-`TrackingValidation` expects an EDM4hep event content in which the relevant collections have already been produced by the preceding steps of the reconstruction chain.
+`TrackingValidation` expects EDM4hep event content in which the relevant collections have already been produced by the preceding steps of the reconstruction chain.
 
 ### Input collection types
 
-`TrackingValidation` consumes the following types of event collections:
+`TrackingValidation` consumes the following input collections:
 
 - **MC particle collection**  
+  Type: `edm4hep::MCParticleCollection`  
   Used as the truth reference for particle-level validation.
 
-- **Planar digi-to-sim association collections**  
+- **Planar digi-to-sim link collections**  
+  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`  
   Used to connect reconstructed planar hits to the originating simulated particles.
 
-- **Wire-hit digi-to-sim association collection**  
+- **Drift-chamber digi-to-sim link collections**  
+  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`  
   Used to connect reconstructed drift-chamber hits to the originating simulated particles.
 
 - **Finder track collection**  
+  Type: `edm4hep::TrackCollection`  
   Collection of tracks produced by the track-finding stage.
 
 - **Fitted track collection**  
+  Type: `edm4hep::TrackCollection`  
   Collection of tracks produced by the standard fitting stage.
 
-- **Perfect fitted-track collection (optional)**  
-  Collection of fitted tracks produced from perfect truth-based associations, used as an additional reference when perfect-fit validation is enabled.
+- **Perfect fitted-track collections (optional)**  
+  Type: `std::vector<const edm4hep::TrackCollection*>`  
+  Optional reference collections produced from perfect truth-based associations, used when perfect-fit validation is enabled.
 
-  ---
+---
 
-  ## Outputs
+## Outputs
 
-  The algorithm writes a ROOT file specified by the `OutputFile`.
+The algorithm writes a ROOT file specified by `OutputFile`.
 
-The exact content of the output depends mainly on the validation mode selected through `Mode`:
+The file contains validation TTrees for finder-level and fitter-level studies, together with summary performance plots produced in `finalize()`. The fitter validation trees store residuals of the reconstructed track parameters with respect to the chosen reference.
+
+### Output content by mode
+
+The exact content filled in the output depends on the validation mode selected through `Mode`:
 
 - **`Mode = 0` (full-pipeline mode)**  
-  Produces both finder-level and fitter-level validation trees.
+  Both finder-level and fitter-level validation are performed.  
+  The output includes the association trees and the fitter residual trees.
 
 - **`Mode = 1` (finder-only mode)**  
-  Produces the trees related to track-finder validation.
+  Only the finder-level validation is performed.  
+  The finder and perfect-association trees are filled, while the fitter trees are booked in the file but are not filled.
 
 - **`Mode = 2` (fitter-only mode)**  
-  Produces the trees related to fitted-track validation.
+  Only the fitter-level validation is performed.  
+  The fitter trees are filled, while the finder and perfect-association trees are booked in the file but are not filled.
 
-In addition, `DoPerfectFit` controls whether the comparison to perfectly associated fitted tracks is filled. When enabled, the output also includes the fitter-versus-perfect validation information.
+### Effect of `DoPerfectFit`
+
+The flag `DoPerfectFit` controls the handling of the `fitter_vs_perfect` output:
+
+- if **`DoPerfectFit = true`** and perfect fitted-track collections are provided, the fitter-to-perfect comparison is filled;
+- if **`DoPerfectFit = false`**, the `fitter_vs_perfect` tree is still created but its per-event content remains empty;
+- if **`DoPerfectFit = true`** but no perfect fitted-track collection is provided, the tree is still written and a warning is issued.
+
+### Summary plots
+
+In `finalize()`, the algorithm also writes summary plots to the same ROOT file, including:
+
+- tracking efficiency vs momentum,
+- `d0` resolution vs momentum,
+- momentum resolution vs momentum,
+- transverse-momentum resolution vs momentum.  
 
 ---
 
@@ -63,7 +91,7 @@ In addition, `DoPerfectFit` controls whether the comparison to perfectly associa
 
 To evaluate finder performance, each reconstructed track is matched to the truth particle with which it shares the largest number of hits.
 
-For each particle–track pair, the algorithm stores two standard hit-based quantities:
+For each particle-track pair, the algorithm stores two standard hit-based quantities:
 
 - **track hit purity**: the fraction of hits on the reconstructed track that originate from the matched truth particle;
 - **track hit efficiency**: the fraction of the truth-particle hits that are recovered in the reconstructed track.
@@ -83,7 +111,6 @@ The summary **tracking efficiency** can then be defined in more than one way.
 In the current implementation, the denominator of the efficiency plot includes generator-level particles with status 1 and at least one truth-linked hit.
 
 For more details on the CMS association convention and the related definitions of tracking efficiency, fake rate, and duplicate rate, see the CMS performance note *Performance of the track selection DNN in Run 3*. :contentReference[oaicite:1]{index=1}
-
 ---
 
 ## How to run
@@ -117,5 +144,3 @@ The validation output is written to:
 ```text
 k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
 ```
-
-
