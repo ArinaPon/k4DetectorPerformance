@@ -33,17 +33,12 @@
 #include "edm4hep/TrackState.h"
 #include "edm4hep/TrackerHitSimTrackerHitLinkCollection.h"
 
-// podio
-#include "podio/ObjectID.h"
-
 // ROOT
 #include "TFile.h"
 #include "TTree.h"
-#include "TH1F.h"
 #include "TGraphErrors.h"
 #include "TCanvas.h"
-#include "TF1.h"
-#include "TStyle.h"
+
 
 // STL
 #include <algorithm>
@@ -278,7 +273,7 @@ struct TrackingValidation final
                                                           "g_p_resolution_vs_p",
                                                           0.1, 100.0, 0.15);
       if (g_p_vs_p) {
-        TCanvas* c_p_vs_p = drawResolutionCanvas(g_p_vs_p,
+        TCanvas* c_p_vs_p = TrackingValidationPlots::drawResolutionCanvas(g_p_vs_p,
                                            "c_p_resolution_vs_p",
                                            "momentum resolution vs momentum;p_{ref} [GeV];#sigma((p_{reco}-p_{ref})/p_{ref})",
                                            0.1, 100.0);
