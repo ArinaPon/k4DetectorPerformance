@@ -88,35 +88,24 @@ For more details on the CMS association convention and the related definitions o
 
 ## How to run
 
-To run the `TrackingValidation` test locally, first set up the Key4hep environment:
+Set up the Key4hep environment:
 
 ```bash
-cd k4RecTracker
 source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
 ```
 
-Then build and install `k4RecTracker`:
+Build and install the package:
 
 ```bash
-k4_local_repo
-mkdir build
+
+mkdir build install
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=../install
 make install -j 8
 ```
 
-Next, build and install `k4DetectorPerformance`, and expose its local install:
 
-```bash
-cd k4DetectorPerformance
-k4_local_repo
-mkdir build
-cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=../install
-make install -j 8
-```
-
-Finally, run the test from the `k4DetectorPerformance` build directory:
+Run the test from the build directory:
 
 ```bash
 cd k4DetectorPerformance/build
