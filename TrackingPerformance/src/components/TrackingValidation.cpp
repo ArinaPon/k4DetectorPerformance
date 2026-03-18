@@ -552,10 +552,13 @@ static TCanvas* drawResolutionCanvas(TGraphErrors* g,
 
   return c;
 }
-// A truth particle is counted as reconstructed if at least one associated finder track
-// has purity above the configured threshold
+// A truth particle is counted as reconstructed according to the selected summary definition:
+//   definition 1: at least one associated finder track has purity above FinderPurityThreshold
+//   definition 2: at least one associated finder track has both purity >= 0.5
+//                 and efficiency >= 0.5
 static TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
                                               const char* graphName,
+                                              int efficiencyDefinition,
                                               double purityThreshold,
                                               double pMin = 0.1,
                                               double pMax = 100.0,
@@ -570,16 +573,19 @@ static TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
 
   std::vector<float>* pVec = nullptr;
   std::vector<std::vector<float>>* purVec = nullptr;
+  std::vector<std::vector<float>>* effVec = nullptr;
 
   finderTree->SetBranchAddress("p", &pVec);
   finderTree->SetBranchAddress("matchPurity", &purVec);
+  finderTree->SetBranchAddress("matchEfficiency", &effVec);
 
   const Long64_t nEntries = finderTree->GetEntries();
   for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
     finderTree->GetEntry(ievt);
 
-    if (!pVec || !purVec) continue;
+    if (!pVec || !purVec || !effVec) continue;
     if (pVec->size() != purVec->size()) continue;
+    if (pVec->size() != effVec->size()) continue;
 
     for (size_t i = 0; i < pVec->size(); ++i) {
       const double p = (*pVec)[i];
@@ -595,16 +601,36 @@ static TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
       if (bin < 0) continue;
 
       // denominator: all truth particles present in finder_particle_to_tracks tree
-      // (genStatus1 and with at least one true hit, as enforced in fillFinderAssoc)
+      // (genStatus == 1 and with at least one true hit, as enforced in fillFinderAssoc)
       nDen[bin]++;
 
       bool isMatched = false;
-      for (size_t j = 0; j < (*purVec)[i].size(); ++j) {
-        if ((*purVec)[i][j] >= purityThreshold) {
-          isMatched = true;
-          break;
+
+      const auto& purities = (*purVec)[i];
+      const auto& efficiencies = (*effVec)[i];
+      const size_t nMatches = std::min(purities.size(), efficiencies.size());
+
+      for (size_t j = 0; j < nMatches; ++j) {
+        const float purity = purities[j];
+        const float efficiency = efficiencies[j];
+
+        if (efficiencyDefinition == 2) {
+          // CMS-style combined definition:
+          // require both purity and efficiency above 50%.
+          if (purity >= 0.5f && efficiency >= 0.5f) {
+            isMatched = true;
+            break;
+          }
+        } else {
+          // Default definition:
+          // require only purity above the configurable threshold.
+          if (purity >= purityThreshold) {
+            isMatched = true;
+            break;
+          }
+        }
       }
-  }
+
       if (isMatched) nNum[bin]++;
     }
   }
@@ -629,6 +655,7 @@ static TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
   return g;
 }
 
+  
 static TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
                                      const char* canvasName,
                                      const char* title,
@@ -678,7 +705,7 @@ struct TrackingValidation final
                 KeyValues("FittedTracks", {"FittedTracks"}),
 
                 
-                KeyValues("PerfectFittedTracks", {"PerfectFitted_tracks"}),
+                KeyValues("PerfectFittedTracks", {"PerfectFittedTracks"}),
             }) {}
 
   StatusCode initialize() override {
@@ -864,6 +891,7 @@ struct TrackingValidation final
       TGraphErrors* g_eff_vs_p = makeEfficiencyVsMomentum(
           m_finder_p2t.tree,
           "g_efficiency_vs_p",
+          m_finderEfficiencyDefinition.value(),
           m_finderPurityThreshold.value(),
           0.1, 100.0, 0.15);
       if (g_eff_vs_p) {
@@ -895,9 +923,20 @@ private:
   Gaudi::Property<float> m_refY{this, "RefPointY", 0.f, "Reference point Y [mm] (must match fitter m_VP_referencePoint)"};
   Gaudi::Property<float> m_refZ{this, "RefPointZ", 0.f, "Reference point Z [mm] (must match fitter m_VP_referencePoint)"};
   
+// Definition used for the summary tracking-efficiency plot.
+// Default = 1 keeps the current behaviour unchanged.
+  Gaudi::Property<int> m_finderEfficiencyDefinition{
+  this, "FinderEfficiencyDefinition", 1,
+  "Definition used for the tracking-efficiency summary plot: "
+  "1 = require purity >= FinderPurityThreshold; "
+  "2 = require purity >= 0.5 and efficiency >= 0.5"
+      };
+
   Gaudi::Property<float> m_finderPurityThreshold{
-    this, "FinderPurityThreshold", 0.75f,
-    "Minimum purity for a particle-track match to count in tracking efficiency"};
+  this, "FinderPurityThreshold", 0.75f,
+  "Minimum purity for a particle-track match to count in tracking efficiency "
+  "when FinderEfficiencyDefinition = 1"
+      };
 
   Gaudi::Property<bool> m_doPerfectFit{
       this, "DoPerfectFit", false,
