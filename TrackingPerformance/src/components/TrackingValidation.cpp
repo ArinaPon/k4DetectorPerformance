@@ -1,21 +1,24 @@
-// TrackingValidation
-//
-// Validation consumer that writes the following TTrees:
-//   1) finder_particle_to_tracks
-//   2) finder_track_to_particles
-//   3) perfect_particle_to_tracks
-//   4) perfect_track_to_particles
-//   5) fitter_vs_mc
-//   6) fitter_vs_perfect
-//
-// In finalize(), the consumer also produces summary plots written to the same ROOT file:
-//   - tracking efficiency vs momentum
-//   - d0 resolution vs momentum
-//   - momentum resolution vs momentum
-//   - transverse-momentum resolution vs momentum
-//
-// The fitter-vs-perfect tree is filled only when perfect-fitted tracks are provided
-// and DoPerfectFit is enabled
+/*
+ * Copyright (c) 2020-2024 Key4hep-Project.
+ *
+ * This file is part of Key4hep.
+ * See https://key4hep.github.io/key4hep-doc/ for further info.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+*/
+
+#include "TrackingValidationHelpers.h"
+#include "TrackingValidationPlots.h"
 
 // k4FWCore
 #include "k4FWCore/Consumer.h"
@@ -30,17 +33,12 @@
 #include "edm4hep/TrackState.h"
 #include "edm4hep/TrackerHitSimTrackerHitLinkCollection.h"
 
-// podio
-#include "podio/ObjectID.h"
-
 // ROOT
 #include "TFile.h"
 #include "TTree.h"
-#include "TH1F.h"
 #include "TGraphErrors.h"
 #include "TCanvas.h"
-#include "TF1.h"
-#include "TStyle.h"
+
 
 // STL
 #include <algorithm>
@@ -52,631 +50,40 @@
 #include <unordered_map>
 #include <vector>
 
-// ---------- helpers ----------
-static inline uint64_t oidKey(const podio::ObjectID& id) {
-  return (uint64_t(id.collectionID) << 32) | uint64_t(uint32_t(id.index));
-}
 
-static inline float safeAtan2(float y, float x) { return std::atan2(y, x); }
+/** @struct TrackingValidation
+ *
+ *  Gaudi Consumer that validates the performance of track finding and track fitting
+ *  by comparing reconstructed tracks with Monte Carlo truth information and,
+ *  optionally, with perfectly associated fitted tracks.
+ *
+ *  The consumer writes several ROOT TTrees containing finder-level associations,
+ *  fitter residuals with respect to MC truth, and fitter residuals with respect
+ *  to perfectly fitted reference tracks. In addition, summary performance plots
+ *  are produced in finalize() and written to the same ROOT file.
+ *
+ *  The supported validation modes are:
+ *    - full pipeline validation,
+ *    - finder-only validation,
+ *    - fitter-only validation.
+ *
+ *  input:
+ *    - MC particle collection : edm4hep::MCParticleCollection
+ *    - planar digi-to-sim link collections : std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>
+ *    - drift-chamber digi-to-sim link collections : std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>
+ *    - finder track collection : edm4hep::TrackCollection
+ *    - fitted track collection : edm4hep::TrackCollection
+ *    - optional perfect fitted-track collections : std::vector<const edm4hep::TrackCollection*>
+ *
+ *  output:
+ *    - ROOT file containing validation TTrees
+ *    - summary performance plots written to the same ROOT file
+ *
+ *  @author Arina Ponomareva
+ *  @date   2026-03
+ *
+ */
 
-static inline float wrapDeltaPhi(float a, float b) {
-  float d = a - b;
-  while (d >  M_PI) d -= 2.f * M_PI;
-  while (d < -M_PI) d += 2.f * M_PI;
-  return d;
-}
-
-struct HelixParams {
-  float D0 = 0.f;        // mm
-  float Z0 = 0.f;        // mm
-  float phi = 0.f;       // rad
-  float omega = 0.f;     // 1/mm 
-  float tanLambda = 0.f; // unitless
-  float p = 0.f;         // GeV
-  float pT = 0.f;        // GeV
-};
-
-// Constants matching the fitter code 
-static constexpr float c_mm_s = 2.998e11f;
-static constexpr float a_genfit = 1e-15f * c_mm_s; // ~2.998e-4
-
-// --- GenFit-like PCAInfo in mm, ported from GenfitTrack::PCAInfo ---
-// Returns PCA point (x,y,z) and Phi0 (tangent angle at PCA).
-struct PCAInfoHelper {
-  float pcaX = 0.f;
-  float pcaY = 0.f;
-  float pcaZ = 0.f;
-  float phi0 = 0.f;
-  bool ok = false;
-};
-
-// position (x,y,z) in mm, momentum (px,py,pz) in GeV, refPoint in mm
-static PCAInfoHelper PCAInfo_mm(float x, float y, float z,
-                                float px, float py, float pz,
-                                int chargeSign,
-                                float refX, float refY,
-                                float Bz) {
-  PCAInfoHelper out;
-
-  const float pt = std::sqrt(px*px + py*py);
-  if (pt == 0.f) return out;
-  if (chargeSign == 0) chargeSign = 1;
-  if (Bz == 0.f) return out;
-
-  // Radius in mm:
-  // GenfitTrack::PCAInfo uses R = pt/(0.3*|q|*Bz)*100  [cm]
-  // -> multiply by 10 to get mm: *1000
-  const float R = pt / (0.3f * std::abs(chargeSign) * Bz) * 1000.f;
-
-  const float tx = px / pt;
-  const float ty = py / pt;
-
-  const float nx = float(chargeSign) * (ty);
-  const float ny = float(chargeSign) * (-tx);
-
-  const float xc = x + R * nx;
-  const float yc = y + R * ny;
-
-  const float vx = refX - xc;
-  const float vy = refY - yc;
-  const float vxy = std::sqrt(vx*vx + vy*vy);
-  if (vxy == 0.f) return out;
-
-  const float ux = vx / vxy;
-  const float uy = vy / vxy;
-
-  const float pcaX = xc + R * ux;
-  const float pcaY = yc + R * uy;
-
-  // tangent direction at PCA (same as GenfitTrack::PCAInfo)
-  const float rx = pcaX - xc;
-  const float ry = pcaY - yc;
-
-  const int sign = (chargeSign > 0) ? 1 : -1;
-  float tanX = -sign * ry;
-  float tanY =  sign * rx;
-
-  const float tnorm = std::sqrt(tanX*tanX + tanY*tanY);
-  if (tnorm == 0.f) return out;
-
-  tanX /= tnorm;
-  tanY /= tnorm;
-
-  const float phi0 = std::atan2(tanY, tanX);
-
-  // ZPCA approximation from GenfitTrack::PCAInfo (ported)
-  // Uses a straight-line minimization in (R,z) with pR=pt, pZ=pz.
-  const float pR = pt;
-  const float pZ = pz;
-  const float R0 = std::sqrt(x*x + y*y);
-  const float Z0 = z;
-
-  const float denom = (pR*pR + pZ*pZ);
-  if (denom == 0.f) return out;
-
-  const float tPCA = -(R0*pR + Z0*pZ) / denom;
-  const float ZPCA = Z0 + pZ * tPCA;
-
-  out.pcaX = pcaX;
-  out.pcaY = pcaY;
-  out.pcaZ = ZPCA;
-  out.phi0 = phi0;
-  out.ok = true;
-  return out;
-}
-
-// Build MC truth helix parameters using the fitter convention
-static HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
-                                                float Bz,
-                                                float refX, float refY, float refZ) {
-  HelixParams hp;
-
-  const auto& mom = mc.getMomentum();
-  const float px = float(mom.x);
-  const float py = float(mom.y);
-  const float pz = float(mom.z);
-
-  const float pT = std::sqrt(px*px + py*py);
-  const float p  = std::sqrt(px*px + py*py + pz*pz);
-
-  hp.pT = pT;
-  hp.p  = p;
-
-  // Charge sign consistent with fitter usage (sign matters for omega)
-  int qSign = 1;
-  if (mc.getCharge() < 0.f) qSign = -1;
-
-  const auto& v = mc.getVertex();
-  const float x = float(v.x); // mm
-  const float y = float(v.y); // mm
-  const float z = float(v.z); // mm
-
-  const auto info = PCAInfo_mm(x, y, z, px, py, pz, qSign, refX, refY, Bz);
-  if (!info.ok) {
-    const float NaN = std::numeric_limits<float>::quiet_NaN();
-    hp.D0 = NaN;
-    hp.Z0 = NaN;
-    hp.phi = NaN;
-    hp.omega = NaN;
-    hp.tanLambda = NaN;
-    return hp;
-  }
-
-  // D0/Z0 in the same convention as the fitter (mm)
-  hp.D0 = ( (-(refX - info.pcaX)) * std::sin(info.phi0) + (refY - info.pcaY) * std::cos(info.phi0) ); // mm
-  hp.Z0 = (info.pcaZ - refZ); // mm
-
-  // phi in fitter is taken from momentum.Phi() at the evaluated state.
-  // For MC we use the momentum direction.
-  hp.phi = safeAtan2(py, px);
-
-  hp.tanLambda = (pT > 0.f) ? (pz / pT) : 0.f;
-
-  // omega convention matches fitter: omega = +/- |a * Bz / pT|
-  hp.omega = (pT > 0.f) ? (std::abs(a_genfit * Bz / pT) * float(qSign)) : 0.f;
-
-  return hp;
-}
-
-static bool getAtIPState(const edm4hep::Track& trk, edm4hep::TrackState& out) {
-  for (const auto& st : trk.getTrackStates()) {
-    if (st.location == edm4hep::TrackState::AtIP) {
-      out = st;
-      return true;
-    }
-  }
-  return false;
-}
-
-
-
-
-static float ptFromState(const edm4hep::TrackState& st, float Bz) {
-  const float omega = std::abs(float(st.omega));
-  if (omega == 0.f) return 0.f;
-  return a_genfit * std::abs(Bz) / omega;
-}
-
-static float momentumFromState(const edm4hep::TrackState& st, float Bz) {
-  const float pT = ptFromState(st, Bz);
-  const float tl = float(st.tanLambda);
-  return pT * std::sqrt(1.f + tl * tl);
-}
-// Helper functions for plotting
-
-static std::vector<double> makeLogBins(double min, double max, double step) {
-  std::vector<double> bins;
-  for (double x = std::log10(min); x <= std::log10(max); x += step) {
-    bins.push_back(std::pow(10., x));
-  }
-  if (bins.empty() || bins.back() < max) bins.push_back(max);
-  return bins;
-}
-
-static TF1* fitGaussianCore(TH1F* h, const std::string& name) {
-  if (!h || h->GetEntries() < 10) return nullptr;
-
-  const double mean = h->GetMean();
-  const double rms  = h->GetRMS();
-  if (rms <= 0.) return nullptr;
-
-  TF1* g1 = new TF1((name + "_g1").c_str(), "gaus", mean - 2.0 * rms, mean + 2.0 * rms);
-  h->Fit(g1, "RQ0");
-
-  double m1 = g1->GetParameter(1);
-  double s1 = std::abs(g1->GetParameter(2));
-  if (s1 <= 0.) s1 = rms;
-
-  TF1* g2 = new TF1(name.c_str(), "gaus", m1 - 1.5 * s1, m1 + 1.5 * s1);
-  h->Fit(g2, "RQ0");
-
-  return g2;
-}
-
-static TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
-                                                const char* graphName = "g_d0_resolution_vs_p",
-                                                double pMin = 0.1,
-                                                double pMax = 100.0,
-                                                double logStep = 0.15) {
-  if (!tree) return nullptr;
-
-  std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
-  const int nBins = bins.size() - 1;
-
-  std::vector<std::unique_ptr<TH1F>> hists;
-  hists.reserve(nBins);
-
-  for (int i = 0; i < nBins; ++i) {
-    hists.emplace_back(std::make_unique<TH1F>(
-        Form("h_d0_bin_%d", i),
-        Form("d0 residual bin %d;resD0 [#mum];Entries", i),
-        120, -20.0, 20.0));
-  }
-
-  
-  std::vector<float>* resD0 = nullptr;
-  std::vector<float>* p_ref_vec = nullptr;
-
-  // Tree stores vectors per event
-  tree->SetBranchAddress("p_ref", &p_ref_vec);
-  tree->SetBranchAddress("resD0", &resD0);
-
-  const Long64_t nEntries = tree->GetEntries();
-  for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
-    tree->GetEntry(ievt);
-
-    if (!p_ref_vec || !resD0) continue;
-    if (p_ref_vec->size() != resD0->size()) continue;
-
-    for (size_t i = 0; i < p_ref_vec->size(); ++i) {
-      const double p = (*p_ref_vec)[i];
-      const double d0_um = (*resD0)[i] * 1000.0; // mm -> um
-
-      if (!std::isfinite(p) || !std::isfinite(d0_um)) continue;
-      if (p < pMin || p >= pMax) continue;
-
-      int bin = -1;
-      for (int b = 0; b < nBins; ++b) {
-        if (p >= bins[b] && p < bins[b + 1]) {
-          bin = b;
-          break;
-        }
-      }
-      if (bin < 0) continue;
-
-      hists[bin]->Fill(d0_um);
-    }
-  }
-
-  TGraphErrors* g = new TGraphErrors();
-  g->SetName(graphName);
-  g->SetTitle(";p_{ref} [GeV];#sigma(d_{0}) [#mum]");
-
-  int ip = 0;
-  for (int b = 0; b < nBins; ++b) {
-    if (hists[b]->GetEntries() < 20) continue;
-
-    TF1* fit = fitGaussianCore(hists[b].get(), Form("fit_d0_bin_%d", b));
-    if (!fit) continue;
-
-    const double sigma = std::abs(fit->GetParameter(2));
-    const double sigmaErr = fit->GetParError(2);
-    const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-
-    g->SetPoint(ip, pCenter, sigma);
-    g->SetPointError(ip, 0.0, sigmaErr);
-    ++ip;
-  }
-
-  return g;
-}
-
-static TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
-                                       const char* canvasName = "c_d0_resolution_vs_p",
-                                       double xMin = 0.1,
-                                       double xMax = 100.0) {
-  if (!g) return nullptr;
-
-  gStyle->SetOptStat(0);
-
-  TCanvas* c = new TCanvas(canvasName, "d0 resolution vs momentum", 800, 600);
-  c->SetLogx();
-
-  g->SetMarkerStyle(20);
-  g->SetLineWidth(2);
-  g->GetXaxis()->SetLimits(xMin, xMax);
-  g->Draw("AP");
-
-  return c;
-}
-
-static TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
-                                                      const char* graphName = "g_p_resolution_vs_p",
-                                                      double pMin = 0.1,
-                                                      double pMax = 100.0,
-                                                      double logStep = 0.15) {
-  if (!tree) return nullptr;
-
-  std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
-  const int nBins = bins.size() - 1;
-
-  std::vector<std::unique_ptr<TH1F>> hists;
-  hists.reserve(nBins);
-
-  for (int i = 0; i < nBins; ++i) {
-    hists.emplace_back(std::make_unique<TH1F>(
-        Form("h_pres_bin_%d", i),
-        Form("p resolution bin %d;(p_{reco}-p_{ref})/p_{ref};Entries", i),
-        120, -0.2, 0.2));
-  }
-
-  std::vector<float>* p_ref_vec = nullptr;
-  std::vector<float>* p_reco_vec = nullptr;
-
-  tree->SetBranchAddress("p_ref", &p_ref_vec);
-  tree->SetBranchAddress("p_reco", &p_reco_vec);
-
-  const Long64_t nEntries = tree->GetEntries();
-  for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
-    tree->GetEntry(ievt);
-
-    if (!p_ref_vec || !p_reco_vec) continue;
-    if (p_ref_vec->size() != p_reco_vec->size()) continue;
-
-    for (size_t i = 0; i < p_ref_vec->size(); ++i) {
-      const double pRef = (*p_ref_vec)[i];
-      const double pReco = (*p_reco_vec)[i];
-
-      if (!std::isfinite(pRef) || !std::isfinite(pReco)) continue;
-      if (pRef <= 0.) continue;
-      if (pRef < pMin || pRef >= pMax) continue;
-
-      const double res = (pReco - pRef) / pRef;
-
-      int bin = -1;
-      for (int b = 0; b < nBins; ++b) {
-        if (pRef >= bins[b] && pRef < bins[b + 1]) {
-          bin = b;
-          break;
-        }
-      }
-      if (bin < 0) continue;
-
-      hists[bin]->Fill(res);
-    }
-  }
-
-  TGraphErrors* g = new TGraphErrors();
-  g->SetName(graphName);
-  g->SetTitle(";p_{ref} [GeV];#sigma((p_{reco}-p_{ref})/p_{ref})");
-
-  int ip = 0;
-  for (int b = 0; b < nBins; ++b) {
-    if (hists[b]->GetEntries() < 20) continue;
-
-    TF1* fit = fitGaussianCore(hists[b].get(), Form("fit_pres_bin_%d", b));
-    if (!fit) continue;
-
-    const double sigma = std::abs(fit->GetParameter(2));
-    const double sigmaErr = fit->GetParError(2);
-    const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-
-    g->SetPoint(ip, pCenter, sigma);
-    g->SetPointError(ip, 0.0, sigmaErr);
-    ++ip;
-  }
-
-  return g;
-}
-
-static TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
-                                                const char* graphName = "g_pt_resolution_vs_p",
-                                                double pMin = 0.1,
-                                                double pMax = 100.0,
-                                                double logStep = 0.15) {
-  if (!tree) return nullptr;
-
-  std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
-  const int nBins = bins.size() - 1;
-
-  std::vector<std::unique_ptr<TH1F>> hists;
-  hists.reserve(nBins);
-
-  for (int i = 0; i < nBins; ++i) {
-    hists.emplace_back(std::make_unique<TH1F>(
-        Form("h_ptres_bin_%d", i),
-        Form("pT resolution bin %d;(pT_{reco}-pT_{ref})/pT_{ref};Entries", i),
-        120, -0.2, 0.2));
-  }
-
-  std::vector<float>* p_ref_vec = nullptr;
-  std::vector<float>* pt_ref_vec = nullptr;
-  std::vector<float>* pt_reco_vec = nullptr;
-
-  tree->SetBranchAddress("p_ref", &p_ref_vec);
-  tree->SetBranchAddress("pT_ref", &pt_ref_vec);
-  tree->SetBranchAddress("pT_reco", &pt_reco_vec);
-
-  const Long64_t nEntries = tree->GetEntries();
-  for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
-    tree->GetEntry(ievt);
-
-    if (!p_ref_vec || !pt_ref_vec || !pt_reco_vec) continue;
-    if (p_ref_vec->size() != pt_ref_vec->size()) continue;
-    if (pt_ref_vec->size() != pt_reco_vec->size()) continue;
-
-    for (size_t i = 0; i < p_ref_vec->size(); ++i) {
-      const double pRef = (*p_ref_vec)[i];
-      const double ptRef = (*pt_ref_vec)[i];
-      const double ptReco = (*pt_reco_vec)[i];
-
-      if (!std::isfinite(pRef) || !std::isfinite(ptRef) || !std::isfinite(ptReco)) continue;
-      if (ptRef <= 0.) continue;
-      if (pRef < pMin || pRef >= pMax) continue;
-
-      const double res = (ptReco - ptRef) / ptRef;
-
-      int bin = -1;
-      for (int b = 0; b < nBins; ++b) {
-        if (pRef >= bins[b] && pRef < bins[b + 1]) {
-          bin = b;
-          break;
-        }
-      }
-      if (bin < 0) continue;
-
-      hists[bin]->Fill(res);
-    }
-  }
-
-  TGraphErrors* g = new TGraphErrors();
-  g->SetName(graphName);
-  g->SetTitle(";p_{ref} [GeV];#sigma((pT_{reco}-pT_{ref})/pT_{ref})");
-
-  int ip = 0;
-  for (int b = 0; b < nBins; ++b) {
-    if (hists[b]->GetEntries() < 20) continue;
-
-    TF1* fit = fitGaussianCore(hists[b].get(), Form("fit_ptres_bin_%d", b));
-    if (!fit) continue;
-
-    const double sigma = std::abs(fit->GetParameter(2));
-    const double sigmaErr = fit->GetParError(2);
-    const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-
-    g->SetPoint(ip, pCenter, sigma);
-    g->SetPointError(ip, 0.0, sigmaErr);
-    ++ip;
-  }
-
-  return g;
-}
-
-static TCanvas* drawResolutionCanvas(TGraphErrors* g,
-                                     const char* canvasName,
-                                     const char* title,
-                                     double xMin = 0.1,
-                                     double xMax = 100.0) {
-  if (!g) return nullptr;
-
-  gStyle->SetOptStat(0);
-
-  TCanvas* c = new TCanvas(canvasName, title, 800, 600);
-  c->SetLogx();
-
-  g->SetMarkerStyle(20);
-  g->SetLineWidth(2);
-  g->SetTitle(title);
-  g->GetXaxis()->SetLimits(xMin, xMax);
-  g->Draw("AP");
-
-  return c;
-}
-// A truth particle is counted as reconstructed according to the selected summary definition:
-//   definition 1: at least one associated finder track has purity above FinderPurityThreshold
-//   definition 2: at least one associated finder track has both purity >= 0.5
-//                 and efficiency >= 0.5
-static TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
-                                              const char* graphName,
-                                              int efficiencyDefinition,
-                                              double purityThreshold,
-                                              double pMin = 0.1,
-                                              double pMax = 100.0,
-                                              double logStep = 0.15) {
-  if (!finderTree) return nullptr;
-
-  std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
-  const int nBins = bins.size() - 1;
-
-  std::vector<int> nDen(nBins, 0);
-  std::vector<int> nNum(nBins, 0);
-
-  std::vector<float>* pVec = nullptr;
-  std::vector<std::vector<float>>* purVec = nullptr;
-  std::vector<std::vector<float>>* effVec = nullptr;
-
-  finderTree->SetBranchAddress("p", &pVec);
-  finderTree->SetBranchAddress("matchPurity", &purVec);
-  finderTree->SetBranchAddress("matchEfficiency", &effVec);
-
-  const Long64_t nEntries = finderTree->GetEntries();
-  for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
-    finderTree->GetEntry(ievt);
-
-    if (!pVec || !purVec || !effVec) continue;
-    if (pVec->size() != purVec->size()) continue;
-    if (pVec->size() != effVec->size()) continue;
-
-    for (size_t i = 0; i < pVec->size(); ++i) {
-      const double p = (*pVec)[i];
-      if (!std::isfinite(p) || p < pMin || p >= pMax) continue;
-
-      int bin = -1;
-      for (int b = 0; b < nBins; ++b) {
-        if (p >= bins[b] && p < bins[b + 1]) {
-          bin = b;
-          break;
-        }
-      }
-      if (bin < 0) continue;
-
-      // denominator: all truth particles present in finder_particle_to_tracks tree
-      // (genStatus == 1 and with at least one true hit, as enforced in fillFinderAssoc)
-      nDen[bin]++;
-
-      bool isMatched = false;
-
-      const auto& purities = (*purVec)[i];
-      const auto& efficiencies = (*effVec)[i];
-      const size_t nMatches = std::min(purities.size(), efficiencies.size());
-
-      for (size_t j = 0; j < nMatches; ++j) {
-        const float purity = purities[j];
-        const float efficiency = efficiencies[j];
-
-        if (efficiencyDefinition == 2) {
-          // CMS-style combined definition:
-          // require both purity and efficiency above 50%.
-          if (purity >= 0.5f && efficiency >= 0.5f) {
-            isMatched = true;
-            break;
-          }
-        } else {
-          // Default definition:
-          // require only purity above the configurable threshold.
-          if (purity >= purityThreshold) {
-            isMatched = true;
-            break;
-          }
-        }
-      }
-
-      if (isMatched) nNum[bin]++;
-    }
-  }
-
-  TGraphErrors* g = new TGraphErrors();
-  g->SetName(graphName);
-  g->SetTitle(";p [GeV];Tracking efficiency");
-
-  int ip = 0;
-  for (int b = 0; b < nBins; ++b) {
-    if (nDen[b] == 0) continue;
-
-    const double eff = double(nNum[b]) / double(nDen[b]);
-    const double err = std::sqrt(eff * (1.0 - eff) / double(nDen[b]));
-    const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-
-    g->SetPoint(ip, pCenter, eff);
-    g->SetPointError(ip, 0.0, err);
-    ++ip;
-  }
-
-  return g;
-}
-
-  
-static TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
-                                     const char* canvasName,
-                                     const char* title,
-                                     double xMin = 0.1,
-                                     double xMax = 100.0) {
-  if (!g) return nullptr;
-
-  gStyle->SetOptStat(0);
-
-  TCanvas* c = new TCanvas(canvasName, title, 800, 600);
-  c->SetLogx();
-
-  g->SetMarkerStyle(20);
-  g->SetLineWidth(2);
-  g->SetTitle(title);
-  g->GetYaxis()->SetRangeUser(0.0, 1.05);
-  g->GetXaxis()->SetLimits(xMin, xMax);
-  g->Draw("AP");
-
-  return c;
-}
 
 // ---------- CONSUMER ----------
 struct TrackingValidation final
@@ -755,7 +162,7 @@ struct TrackingValidation final
         if (!digi.isAvailable() || !mc.isAvailable()) continue;
 
         const int pid = mc.getObjectID().index;
-        const uint64_t key = oidKey(digi.getObjectID());
+        const uint64_t key = TrackingValidationHelpers::oidKey(digi.getObjectID());
         hitsPerParticle[pid].push_back(key);
         hitToParticle[key] = pid;
       }
@@ -771,7 +178,7 @@ struct TrackingValidation final
         if (!digi.isAvailable() || !mc.isAvailable()) continue;
 
         const int pid = mc.getObjectID().index;
-        const uint64_t key = oidKey(digi.getObjectID());
+        const uint64_t key = TrackingValidationHelpers::oidKey(digi.getObjectID());
         hitsPerParticle[pid].push_back(key);
         hitToParticle[key] = pid;
       }
@@ -814,7 +221,7 @@ struct TrackingValidation final
 
         for (const auto& trk : *coll) {
           edm4hep::TrackState st;
-          if (!getAtIPState(trk, st)) continue;
+          if (!TrackingValidationHelpers::getAtIPState(trk, st)) continue;
 
           const int pid = majorityParticleForTrack(trk, hitToParticle);
           if (pid < 0 || pid >= (int)mcParts.size()) continue;
@@ -851,22 +258,22 @@ struct TrackingValidation final
 
       //fitter summary plots
       // d0 resolution vs momentum from fitter_vs_mc
-      TGraphErrors* g_d0_vs_p = makeD0ResolutionVsMomentum(m_fit_vs_mc.tree,
+      TGraphErrors* g_d0_vs_p = TrackingValidationPlots::makeD0ResolutionVsMomentum(m_fit_vs_mc.tree,
                                                          "g_d0_resolution_vs_p",
                                                          0.1, 100.0, 0.15);
       if (g_d0_vs_p) {
-        TCanvas* c_d0_vs_p = drawD0ResolutionCanvas(g_d0_vs_p,
+        TCanvas* c_d0_vs_p = TrackingValidationPlots::drawD0ResolutionCanvas(g_d0_vs_p,
                                                   "c_d0_resolution_vs_p",
                                                   0.1, 100.0);
         g_d0_vs_p->Write();
         if (c_d0_vs_p) c_d0_vs_p->Write();
       }
       // p resolution vs momentum
-      TGraphErrors* g_p_vs_p = makeMomentumResolutionVsMomentum(m_fit_vs_mc.tree,
+      TGraphErrors* g_p_vs_p = TrackingValidationPlots::makeMomentumResolutionVsMomentum(m_fit_vs_mc.tree,
                                                           "g_p_resolution_vs_p",
                                                           0.1, 100.0, 0.15);
       if (g_p_vs_p) {
-        TCanvas* c_p_vs_p = drawResolutionCanvas(g_p_vs_p,
+        TCanvas* c_p_vs_p = TrackingValidationPlots::drawResolutionCanvas(g_p_vs_p,
                                            "c_p_resolution_vs_p",
                                            "momentum resolution vs momentum;p_{ref} [GeV];#sigma((p_{reco}-p_{ref})/p_{ref})",
                                            0.1, 100.0);
@@ -875,11 +282,11 @@ struct TrackingValidation final
       }
 
       // pT resolution vs momentum
-      TGraphErrors* g_pt_vs_p = makePtResolutionVsMomentum(m_fit_vs_mc.tree,
+      TGraphErrors* g_pt_vs_p = TrackingValidationPlots::makePtResolutionVsMomentum(m_fit_vs_mc.tree,
                                                      "g_pt_resolution_vs_p",
                                                      0.1, 100.0, 0.15);
       if (g_pt_vs_p) {
-        TCanvas* c_pt_vs_p = drawResolutionCanvas(g_pt_vs_p,
+        TCanvas* c_pt_vs_p = TrackingValidationPlots::drawResolutionCanvas(g_pt_vs_p,
                                             "c_pt_resolution_vs_p",
                                             "pT resolution vs momentum;p_{ref} [GeV];#sigma((pT_{reco}-pT_{ref})/pT_{ref})",
                                             0.1, 100.0);
@@ -888,14 +295,14 @@ struct TrackingValidation final
       }
 
       // finder summary plot
-      TGraphErrors* g_eff_vs_p = makeEfficiencyVsMomentum(
+      TGraphErrors* g_eff_vs_p = TrackingValidationPlots::makeEfficiencyVsMomentum(
           m_finder_p2t.tree,
           "g_efficiency_vs_p",
           m_finderEfficiencyDefinition.value(),
           m_finderPurityThreshold.value(),
           0.1, 100.0, 0.15);
       if (g_eff_vs_p) {
-        TCanvas* c_eff_vs_p = drawEfficiencyCanvas(
+        TCanvas* c_eff_vs_p = TrackingValidationPlots::drawEfficiencyCanvas(
             g_eff_vs_p,
             "c_efficiency_vs_p",
             "tracking efficiency vs momentum;p [GeV];Efficiency",
@@ -1090,7 +497,7 @@ private:
   for (const auto& trk : finderTracks) {
     trackNHits[tIdx] = (int)trk.getTrackerHits().size();
     for (const auto& h : trk.getTrackerHits()) {
-      const uint64_t hk = oidKey(h.getObjectID());
+      const uint64_t hk = TrackingValidationHelpers::oidKey(h.getObjectID());
       auto it = hitToParticle.find(hk);
       if (it == hitToParticle.end()) continue;
       trackParticleCounts[tIdx][it->second] += 1;
@@ -1190,7 +597,7 @@ private:
                                const std::unordered_map<uint64_t, int>& hitToParticle) const {
     std::unordered_map<int, int> counts;
     for (const auto& h : trk.getTrackerHits()) {
-      const uint64_t hk = oidKey(h.getObjectID());
+      const uint64_t hk = TrackingValidationHelpers::oidKey(h.getObjectID());
       auto it = hitToParticle.find(hk);
       if (it == hitToParticle.end()) continue;
       counts[it->second] += 1;
@@ -1227,7 +634,7 @@ private:
     int tIdx = 0;
     for (const auto& trk : fittedTracks) {
       edm4hep::TrackState stReco;
-      if (!getAtIPState(trk, stReco)) {
+      if (!TrackingValidationHelpers::getAtIPState(trk, stReco)) {
         ++tIdx;
         continue;
       }
@@ -1241,17 +648,17 @@ private:
       const auto& mc = mcParts[pid];
 
       // reco params (already in fitter convention)
-      HelixParams reco;
+      TrackingValidationHelpers::HelixParams reco;
       reco.D0 = float(stReco.D0);
       reco.Z0 = float(stReco.Z0);
       reco.phi = float(stReco.phi);
       reco.omega = float(stReco.omega);
       reco.tanLambda = float(stReco.tanLambda);
-      reco.pT = ptFromState(stReco, m_Bz.value());
-      reco.p = momentumFromState(stReco, m_Bz.value());
+      reco.pT = TrackingValidationHelpers::ptFromState(stReco, m_Bz.value());
+      reco.p = TrackingValidationHelpers::momentumFromState(stReco, m_Bz.value());
 
       // ref from MC using the SAME convention as fitter (PCA + phi0 + ZPCA + omega=a*B/pT)
-      const HelixParams refMC = truthFromMC_GenfitConvention(mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
+      const TrackingValidationHelpers::HelixParams refMC = TrackingValidationHelpers::truthFromMC_GenfitConvention(mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
   
       
       // --- vs MC  ---
@@ -1259,7 +666,7 @@ private:
       m_fit_vs_mc.track_location.push_back(int(stReco.location));
       m_fit_vs_mc.resD0.push_back(reco.D0 - refMC.D0);
       m_fit_vs_mc.resZ0.push_back(reco.Z0 - refMC.Z0);
-      m_fit_vs_mc.resPhi.push_back(wrapDeltaPhi(reco.phi, refMC.phi));
+      m_fit_vs_mc.resPhi.push_back(TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refMC.phi));
       m_fit_vs_mc.resOmega.push_back(reco.omega - refMC.omega);
       m_fit_vs_mc.resTanL.push_back(reco.tanLambda - refMC.tanLambda);
       m_fit_vs_mc.p_reco.push_back(reco.p);
@@ -1273,20 +680,20 @@ private:
         if (it != perfectAtIPByPid.end()) {
           const auto& stPerf = it->second.st;
 
-          HelixParams refP;
+          TrackingValidationHelpers::HelixParams refP;
           refP.D0 = float(stPerf.D0);
           refP.Z0 = float(stPerf.Z0);
           refP.phi = float(stPerf.phi);
           refP.omega = float(stPerf.omega);
           refP.tanLambda = float(stPerf.tanLambda);
-          refP.pT = ptFromState(stPerf, m_Bz.value());
-          refP.p = momentumFromState(stPerf, m_Bz.value());
+          refP.pT = TrackingValidationHelpers::ptFromState(stPerf, m_Bz.value());
+          refP.p = TrackingValidationHelpers::momentumFromState(stPerf, m_Bz.value());
           
           m_fit_vs_perfect.track_index.push_back(tIdx);
           m_fit_vs_perfect.track_location.push_back(int(stReco.location));
           m_fit_vs_perfect.resD0.push_back(reco.D0 - refP.D0);
           m_fit_vs_perfect.resZ0.push_back(reco.Z0 - refP.Z0);
-          m_fit_vs_perfect.resPhi.push_back(wrapDeltaPhi(reco.phi, refP.phi));
+          m_fit_vs_perfect.resPhi.push_back(TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refP.phi));
           m_fit_vs_perfect.resOmega.push_back(reco.omega - refP.omega);
           m_fit_vs_perfect.resTanL.push_back(reco.tanLambda - refP.tanLambda);
           m_fit_vs_perfect.p_reco.push_back(reco.p);

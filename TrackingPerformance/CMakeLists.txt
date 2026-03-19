@@ -28,6 +28,7 @@ list(APPEND ExternalData_URL_TEMPLATES
 
 file(GLOB sources
   ${PROJECT_SOURCE_DIR}/src/*.cc
+  ${PROJECT_SOURCE_DIR}/src/*.cpp
   ${PROJECT_SOURCE_DIR}/src/components/*.cpp
 )
 
