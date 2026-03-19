@@ -67,17 +67,27 @@ N_EVENTS=5
 SEED=42
 
 echo "=== Test configuration ==="
-echo "Script dir:       ${SCRIPT_DIR}"
-echo "Temporary dir:    ${TMPDIR}"
-echo "Geometry XML:     ${XML_FILE}"
-echo "DDSim steering:   ${STEERING_FILE}"
-echo "Run script:       ${RUN_FILE}"
-echo "ONNX model:       ${MODEL_FILE}"
-echo "Simulation file:  ${SIM_FILE}"
-echo "Reco file:        ${RECO_FILE}"
-echo "Validation file:  ${VAL_FILE}"
-echo "Events:           ${N_EVENTS}"
-echo "Seed:             ${SEED}"
+echo "Script dir:                 ${SCRIPT_DIR}"
+echo "Temporary dir:              ${TMPDIR}"
+echo "Geometry XML:               ${XML_FILE}"
+echo "DDSim steering:             ${STEERING_FILE}"
+echo "Run script:                 ${RUN_FILE}"
+echo "ONNX model:                 ${MODEL_FILE}"
+echo "Simulation file:            ${SIM_FILE}"
+echo "Reco file:                  ${RECO_FILE}"
+echo "Validation file:            ${VAL_FILE}"
+echo "Events:                     ${N_EVENTS}"
+echo "Seed:                       ${SEED}"
+echo "runDigi:                    1"
+echo "runFinder:                  1"
+echo "runFitter:                  1"
+echo "runPerfectTracking:         1"
+echo "runValidation:              1"
+echo "useDCH:                     1"
+echo "mode:                       0"
+echo "doPerfectFit:               1"
+echo "finderEfficiencyDefinition: 1"
+echo "finderPurityThreshold:      0.75"
 
 echo "=== Step 1: DDSim ==="
 ddsim \
@@ -100,12 +110,23 @@ if [ ! -f "${SIM_FILE}" ]; then
   exit 1
 fi
 
-echo "=== Step 2: reconstruction + perfect tracking + validation ==="
+echo "=== Step 2: digitization + tracking + validation ==="
 k4run "${RUN_FILE}" \
   --inputFile "${SIM_FILE}" \
   --modelPath "${MODEL_FILE}" \
   --outputFile "${RECO_FILE}" \
-  --validationFile "${VAL_FILE}"
+  --validationFile "${VAL_FILE}" \
+  --geom "${XML_FILE}" \
+  --runDigi 1 \
+  --runFinder 1 \
+  --runFitter 1 \
+  --runPerfectTracking 1 \
+  --runValidation 1 \
+  --useDCH 1 \
+  --mode 0 \
+  --doPerfectFit 1 \
+  --finderEfficiencyDefinition 1 \
+  --finderPurityThreshold 0.75
 
 if [ ! -f "${RECO_FILE}" ]; then
   echo "ERROR: reconstruction output was not created: ${RECO_FILE}"

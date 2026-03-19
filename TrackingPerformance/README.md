@@ -2,8 +2,8 @@
 
 ## Overview
 
-`TrackingValidation` is a validation algorithm for studying the performance of track finding and track fitting in the tracking reconstruction.
-It is desighned to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking. The algorithm writes validation information to a ROOT output file containing TTrees and summary plots that can be used later for performance studies and plotting.
+`TrackingValidation` is a validation algorithm for studying the performance (efficiency, purity, residuals, resolutions) of track finding and track fitting in the tracking reconstruction.
+It is desighned to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking i.e. tracks fitted using the correct simhits from the particle truth information. The algorithm writes validation information to a ROOT output file containing TTrees and summary plots that can be used later for performance studies and plotting.
 
 Typical use cases include:
 - validation of track-finder performance,
@@ -118,6 +118,17 @@ For more details on the CMS association convention and the related definitions o
 
 ## How to run
 
+`TrackingValidation` is tested through a small end-to-end workflow driven by `ctest`. The test starts from a simulated EDM4hep file, runs the reconstruction and validation steering, and writes the final validation ROOT output.
+
+In the current setup:
+
+- the simulation step is performed with `ddsim` in the shell test,
+- the reconstruction and validation steps are controlled by `runTrackingValidation.py`,
+- the full test is launched through `ctest`.
+
+
+### Build and run the test
+
 Set up the Key4hep environment:
 
 ```bash
@@ -147,3 +158,38 @@ The validation output is written to:
 ```text
 k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
 ```
+### Test configuration and steering options
+
+The current test runs the full reconstruction and validation chain after simulation with the following settings:
+
+- `runDigi = 1`  
+  digitization step (`0` = skip digitization, `1` = run digitization);
+
+- `runFinder = 1`  
+  track-finder step (`0` = skip track finder, `1` = run track finder);
+
+- `runFitter = 1`  
+  reconstructed-track fitter (`0` = skip reco fitter, `1` = run reco fitter);
+
+- `runPerfectTracking = 1`  
+  perfect-tracking and perfect-fitter chain (`0` = skip perfect tracking/perfect fitter, `1` = run them);
+
+- `runValidation = 1`  
+  validation step (`0` = skip validation, `1` = run validation);
+
+- `useDCH = 1`  
+  drift-chamber collections (`0` = disable DCH, `1` = use DCH);
+
+- `mode = 0`  
+  validation mode (`0` = full validation, `1` = finder-only validation, `2` = fitter-only validation);
+
+- `doPerfectFit = 1`  
+  fitter-versus-perfect comparison (`0` = disable fitter-vs-perfect filling, `1` = enable it);
+
+- `finderEfficiencyDefinition = 1`  
+  tracking-efficiency definition (`1` = purity-based definition, `2` = purity >= 0.5 and efficiency >= 0.5);
+
+- `finderPurityThreshold = 0.75`  
+  purity threshold used when `FinderEfficiencyDefinition = 1`.
+
+These command-line flags are defined in `runTrackingValidation.py`, which allows the same steering file to be used either for the full chain or for reduced workflows in which some reconstruction steps are skipped and only the validation is run.
