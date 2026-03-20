@@ -35,18 +35,17 @@ if ! command -v k4run >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+  echo "ERROR: curl not found in PATH"
+  exit 1
+fi
+
 XML_FILE="${K4GEO}/FCCee/IDEA/compact/IDEA_o1_v03/IDEA_o1_v03.xml"
-STEERING_FILE="${SCRIPT_DIR}/SteeringFile_IDEA_o1_v03.py"
 RUN_FILE="${SCRIPT_DIR}/runTrackingValidation.py"
 VAL_FILE="${SCRIPT_DIR}/validation_output_test.root"
 
 if [ ! -f "${XML_FILE}" ]; then
   echo "ERROR: geometry XML file not found: ${XML_FILE}"
-  exit 1
-fi
-
-if [ ! -f "${STEERING_FILE}" ]; then
-  echo "ERROR: DDSim steering file not found: ${STEERING_FILE}"
   exit 1
 fi
 
@@ -58,6 +57,7 @@ fi
 TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/tracking_validation.XXXXXX")"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
+STEERING_FILE="${TMPDIR}/SteeringFile_IDEA_o1_v03.py"
 SIM_FILE="${TMPDIR}/out_sim_edm4hep.root"
 RECO_FILE="${TMPDIR}/out_reco.root"
 
@@ -65,6 +65,16 @@ rm -f "${VAL_FILE}"
 
 N_EVENTS=5
 SEED=42
+
+echo "=== Downloading DDSim steering file ==="
+curl -L \
+  -o "${STEERING_FILE}" \
+  https://raw.githubusercontent.com/key4hep/k4geo/master/example/SteeringFile_IDEA_o1_v03.py
+
+if [ ! -f "${STEERING_FILE}" ]; then
+  echo "ERROR: failed to download DDSim steering file"
+  exit 1
+fi
 
 echo "=== Test configuration ==="
 echo "Script dir:                 ${SCRIPT_DIR}"

@@ -32,8 +32,19 @@
 
 namespace TrackingValidationPlots {
 
+/// Build logarithmic momentum bins    
 std::vector<double> makeLogBins(double min, double max, double step);
+
+/// Fit the Gaussian core of a histogram
 TF1* fitGaussianCore(TH1F* h, const std::string& name);
+
+/**
+ * @brief Build the d0 resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, fills residual histograms in
+ * momentum bins, fits the Gaussian core in each bin, and returns the extracted
+ * sigma values as a TGraphErrors.
+ */
 
 TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
                                          const char* graphName = "g_d0_resolution_vs_p",
@@ -41,29 +52,52 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
                                          double pMax = 100.0,
                                          double logStep = 0.15);
 
+/// Draw the d0 resolution graph on a logarithmic momentum axis                                         
 TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
                                 const char* canvasName = "c_d0_resolution_vs_p",
                                 double xMin = 0.1,
                                 double xMax = 100.0);
 
+/**
+ * @brief Build the total-momentum resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, fills relative momentum
+ * residual histograms in momentum bins, fits the Gaussian core in each bin,
+ * and returns the extracted sigma values as a TGraphErrors.
+ */                                
 TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
                                                const char* graphName = "g_p_resolution_vs_p",
                                                double pMin = 0.1,
                                                double pMax = 100.0,
                                                double logStep = 0.15);
 
+/**
+ * @brief Build the transverse-momentum resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, fills relative transverse-
+ * momentum residual histograms in momentum bins, fits the Gaussian core in
+ * each bin, and returns the extracted sigma values as a TGraphErrors.
+ */                                               
 TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
                                          const char* graphName = "g_pt_resolution_vs_p",
                                          double pMin = 0.1,
                                          double pMax = 100.0,
                                          double logStep = 0.15);
 
+/// Draw a generic resolution graph on a logarithmic momentum axis
 TCanvas* drawResolutionCanvas(TGraphErrors* g,
                               const char* canvasName,
                               const char* title,
                               double xMin = 0.1,
                               double xMax = 100.0);
 
+/**
+ * @brief Build the tracking-efficiency graph as a function of momentum.
+ *
+ * The function reads the finder validation tree and computes the efficiency
+ * according to the selected matching definition, returning the result as a
+ * TGraphErrors.
+ */                              
 TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
                                        const char* graphName,
                                        int efficiencyDefinition,
@@ -72,6 +106,7 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
                                        double pMax = 100.0,
                                        double logStep = 0.15);
 
+/// Draw the tracking-efficiency graph on a logarithmic momentum axis                                       
 TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
                               const char* canvasName,
                               const char* title,
