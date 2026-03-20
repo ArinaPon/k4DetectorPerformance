@@ -171,8 +171,11 @@ k4DetectorPerformance/TrackingPerformance/test/validation_output.root
 ```
 ### Test configuration and steering options
 
-The current test runs the full reconstruction and validation chain after simulation with the following settings:
+The current test runs the full reconstruction and validation chain with the following settings:
 
+- `RUN_SIM = 1`  
+  simulation step in the shell test (`0` = skip simulation and use an existing EDM4hep input file via `INPUT_FILE_OVERRIDE`, `1` = run simulation with `ddsim`);
+  
 - `runDigi = 1`  
   digitization step (`0` = skip digitization, `1` = run digitization);
 
