@@ -29,6 +29,7 @@
 
 namespace TrackingValidationHelpers {
 
+/// Container for helix parameters in the fitter convention
 struct HelixParams {
   float D0 = 0.f;
   float Z0 = 0.f;
@@ -39,6 +40,7 @@ struct HelixParams {
   float pT = 0.f;
 };
 
+/// Helper container for PCA position and tangent angle
 struct PCAInfoHelper {
   float pcaX = 0.f;
   float pcaY = 0.f;
@@ -47,9 +49,22 @@ struct PCAInfoHelper {
   bool ok = false;
 };
 
+/// Build a unique integer key from a podio object identifier
 uint64_t oidKey(const podio::ObjectID& id);
+
+/// Safe wrapper around std::atan2
 float safeAtan2(float y, float x);
+
+/// Wrap a phi difference into the interval [-pi, pi]
 float wrapDeltaPhi(float a, float b);
+
+/**
+ * @brief Compute the PCA position and tangent angle in mm using a GenFit-like convention.
+ *
+ * The function derives the point of closest approach to the reference point
+ * and the corresponding tangent direction from the input position, momentum,
+ * charge sign, and magnetic field.
+ */
 
 PCAInfoHelper PCAInfo_mm(float x, float y, float z,
                          float px, float py, float pz,
@@ -57,13 +72,26 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z,
                          float refX, float refY,
                          float Bz);
 
+
+/**
+ * @brief Build truth helix parameters in the same convention used by the fitter.
+ *
+ * The returned parameters are derived from the MC particle kinematics and vertex
+ * using the same reference-point and helix convention adopted for fitted tracks,
+ * so that residuals can be computed consistently.
+ */
+ 
 HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
                                          float Bz,
                                          float refX, float refY, float refZ);
 
+/// Retrieve the track state stored at the interaction point                                         
 bool getAtIPState(const edm4hep::Track& trk, edm4hep::TrackState& out);
 
+/// Compute the transverse momentum from a track state
 float ptFromState(const edm4hep::TrackState& st, float Bz);
+
+/// Compute the total momentum from a track state
 float momentumFromState(const edm4hep::TrackState& st, float Bz);
 
 } // namespace TrackingValidationHelpers
