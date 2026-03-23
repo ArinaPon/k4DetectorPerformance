@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODEL_FILE="${1:-}"
 
 # Optional shell-level control of the simulation step
-RUN_SIM="${RUN_SIM:-1}"
-INPUT_FILE_OVERRIDE="${INPUT_FILE_OVERRIDE:-}"
+TRACKINGPERF_RUN_SIM="${TRACKINGPERF_RUN_SIM:-1}"
+TRACKINGPERF_INPUT_FILE_OVERRIDE="${TRACKINGPERF_INPUT_FILE_OVERRIDE:-}"
 
 if [ -z "${MODEL_FILE}" ]; then
   echo "ERROR: missing ONNX model path argument"
@@ -34,7 +34,7 @@ if ! command -v k4run >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ "${RUN_SIM}" -eq 1 ]; then
+if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   if ! command -v ddsim >/dev/null 2>&1; then
     echo "ERROR: ddsim not found in PATH"
     exit 1
@@ -73,22 +73,22 @@ N_EVENTS=5
 SEED=42
 
 # Decide which input file to pass to k4run
-if [ "${RUN_SIM}" -eq 1 ]; then
+if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   INPUT_FILE="${SIM_FILE}"
 else
-  if [ -z "${INPUT_FILE_OVERRIDE}" ]; then
-    echo "ERROR: RUN_SIM=0 but INPUT_FILE_OVERRIDE is empty"
+  if [ -z "${TRACKINGPERF_INPUT_FILE_OVERRIDE}" ]; then
+    echo "ERROR: TRACKINGPERF_RUN_SIM=0 but TRACKINGPERF_INPUT_FILE_OVERRIDE is empty"
     echo "Please provide an existing EDM4hep file, e.g."
-    echo "  RUN_SIM=0 INPUT_FILE_OVERRIDE=/path/to/input.root $0 /path/to/model.onnx"
+    echo "  TRACKINGPERF_RUN_SIM=0 TRACKINGPERF_INPUT_FILE_OVERRIDE=/path/to/input.root $0 /path/to/model.onnx"
     exit 1
   fi
 
-  if [ ! -f "${INPUT_FILE_OVERRIDE}" ]; then
-    echo "ERROR: INPUT_FILE_OVERRIDE does not exist: ${INPUT_FILE_OVERRIDE}"
+  if [ ! -f "${TRACKINGPERF_INPUT_FILE_OVERRIDE}" ]; then
+    echo "ERROR: TRACKINGPERF_INPUT_FILE_OVERRIDE does not exist: ${TRACKINGPERF_INPUT_FILE_OVERRIDE}"
     exit 1
   fi
 
-  INPUT_FILE="${INPUT_FILE_OVERRIDE}"
+  INPUT_FILE="${TRACKINGPERF_INPUT_FILE_OVERRIDE}"
 fi
 
 echo "=== Test configuration ==="
@@ -97,7 +97,7 @@ echo "Temporary dir:              ${TMPDIR}"
 echo "Geometry XML:               ${XML_FILE}"
 echo "Run script:                 ${RUN_FILE}"
 echo "ONNX model:                 ${MODEL_FILE}"
-echo "RUN_SIM:                    ${RUN_SIM}"
+echo "TRACKINGPERF_RUN_SIM:       ${TRACKINGPERF_RUN_SIM}"
 echo "Input file:                 ${INPUT_FILE}"
 echo "Reco file:                  ${RECO_FILE}"
 echo "Validation file:            ${VAL_FILE}"
@@ -114,7 +114,7 @@ echo "doPerfectFit:               1"
 echo "finderEfficiencyDefinition: 1"
 echo "finderPurityThreshold:      0.75"
 
-if [ "${RUN_SIM}" -eq 1 ]; then
+if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   echo "=== Downloading DDSim steering file ==="
   curl -L \
     -o "${STEERING_FILE}" \
@@ -146,7 +146,7 @@ if [ "${RUN_SIM}" -eq 1 ]; then
     exit 1
   fi
 else
-  echo "=== Step 1: DDSim skipped (RUN_SIM=0) ==="
+  echo "=== Step 1: DDSim skipped (TRACKINGPERF_RUN_SIM=0) ==="
 fi
 
 echo "=== Step 2: digitization + tracking + validation ==="
@@ -178,7 +178,7 @@ if [ ! -f "${VAL_FILE}" ]; then
 fi
 
 echo "=== Step 3: check outputs ==="
-if [ "${RUN_SIM}" -eq 1 ]; then
+if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   test -f "${SIM_FILE}"
 fi
 test -f "${RECO_FILE}"
