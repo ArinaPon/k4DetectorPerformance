@@ -3,7 +3,7 @@
 ## Overview
 
 `TrackingValidation` is a validation algorithm for studying the performance (efficiency, purity, residuals, resolutions) of track finding and track fitting in the tracking reconstruction.
-It is desighned to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking i.e. tracks fitted using the correct simhits from the particle truth information. The algorithm writes validation information to a ROOT output file containing TTrees and summary plots that can be used later for performance studies and plotting.
+It is designed to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking, i.e. tracks fitted using the correct simHits from the particle truth information. The algorithm writes validation information to a ROOT output file containing TTrees and summary plots that can be used later for performance studies and plotting.
 
 Typical use cases include:
 - validation of track-finder performance,
@@ -126,26 +126,6 @@ In the current setup:
 - the reconstruction and validation steps are controlled by `runTrackingValidation.py`,
 - the full test is launched through `ctest`.
 
-
-### Build and run the test
-
-Set up the Key4hep environment:
-
-```bash
-source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
-```
-
-Build and install the package:
-
-```bash
-
-mkdir build install
-cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=../install
-make install -j 8
-```
-
-
 Run the test from the build directory:
 
 ```bash
@@ -162,8 +142,8 @@ k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
 
 The current test runs the full reconstruction and validation chain with the following settings:
 
-- `RUN_SIM = 1`  
-  simulation step in the shell test (`0` = skip simulation and use an existing EDM4hep input file via `INPUT_FILE_OVERRIDE`, `1` = run simulation with `ddsim`);
+- `TRACKINGPERF_RUN_SIM = 1`  
+  simulation step in the shell test (`0` = skip simulation and use an existing EDM4hep input file via `TRACKINGPERF_INPUT_FILE_OVERRIDE`, `1` = run simulation with `ddsim`);
   
 - `runDigi = 1`  
   digitization step (`0` = skip digitization, `1` = run digitization);
