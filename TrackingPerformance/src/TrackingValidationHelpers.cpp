@@ -28,9 +28,6 @@ namespace TrackingValidationHelpers {
 static constexpr float c_mm_s = 2.998e11f;
 static constexpr float a_genfit = 1e-15f * c_mm_s;
 
-uint64_t oidKey(const podio::ObjectID& id) {
-  return (uint64_t(id.collectionID) << 32) | uint64_t(uint32_t(id.index));
-}
 
 float safeAtan2(float y, float x) {
   return std::atan2(y, x);

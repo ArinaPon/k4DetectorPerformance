@@ -49,9 +49,6 @@ struct PCAInfoHelper {
   bool ok = false;
 };
 
-/// Build a unique integer key from a podio object identifier
-uint64_t oidKey(const podio::ObjectID& id);
-
 /// Safe wrapper around std::atan2
 float safeAtan2(float y, float x);
 

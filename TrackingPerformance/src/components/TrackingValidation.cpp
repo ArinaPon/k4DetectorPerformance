@@ -19,6 +19,7 @@
 
 #include "TrackingValidationHelpers.h"
 #include "TrackingValidationPlots.h"
+#include "podio/ObjectID.h"
 
 // k4FWCore
 #include "k4FWCore/Consumer.h"
@@ -146,10 +147,10 @@ struct TrackingValidation final
     const int mode = m_mode.value();  // 0 full, 1 finder-only, 2 fitter-only
 
     // ---------- Build truth maps: hit -> particle, particle -> hits ----------
-    std::unordered_map<int, std::vector<uint64_t>> hitsPerParticle;
+    std::unordered_map<int, std::vector<podio::ObjectID>> hitsPerParticle;
     hitsPerParticle.reserve(mcParts.size());
 
-    std::unordered_map<uint64_t, int> hitToParticle;
+    std::unordered_map<podio::ObjectID, int> hitToParticle;
     hitToParticle.reserve(200000);
 
     // planar links
@@ -162,7 +163,7 @@ struct TrackingValidation final
         if (!digi.isAvailable() || !mc.isAvailable()) continue;
 
         const int pid = mc.getObjectID().index;
-        const uint64_t key = TrackingValidationHelpers::oidKey(digi.getObjectID());
+        const podio::ObjectID key = digi.getObjectID();
         hitsPerParticle[pid].push_back(key);
         hitToParticle[key] = pid;
       }
@@ -178,7 +179,7 @@ struct TrackingValidation final
         if (!digi.isAvailable() || !mc.isAvailable()) continue;
 
         const int pid = mc.getObjectID().index;
-        const uint64_t key = TrackingValidationHelpers::oidKey(digi.getObjectID());
+        const auto key = digi.getObjectID();
         hitsPerParticle[pid].push_back(key);
         hitToParticle[key] = pid;
       }
@@ -434,7 +435,7 @@ private:
 
   // ---------- association trees ----------
   void fillPerfectAssoc(int event, const edm4hep::MCParticleCollection& mcParts,
-                        const std::unordered_map<int, std::vector<uint64_t>>& hitsPerParticle) const {
+                        const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle) const {
 
     m_perf_p2t.clear();
     m_perf_t2p.clear();
@@ -480,8 +481,8 @@ private:
 
   void fillFinderAssoc(int event, const edm4hep::MCParticleCollection& mcParts,
                      const edm4hep::TrackCollection& finderTracks,
-                     const std::unordered_map<uint64_t, int>& hitToParticle,
-                     const std::unordered_map<int, std::vector<uint64_t>>& hitsPerParticle) const {
+                     const std::unordered_map<podio::ObjectID, int>& hitToParticle,
+                     const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle) const {
 
   m_finder_p2t.clear();
   m_finder_t2p.clear();
@@ -497,7 +498,7 @@ private:
   for (const auto& trk : finderTracks) {
     trackNHits[tIdx] = (int)trk.getTrackerHits().size();
     for (const auto& h : trk.getTrackerHits()) {
-      const uint64_t hk = TrackingValidationHelpers::oidKey(h.getObjectID());
+      const auto hk = h.getObjectID();
       auto it = hitToParticle.find(hk);
       if (it == hitToParticle.end()) continue;
       trackParticleCounts[tIdx][it->second] += 1;
@@ -594,10 +595,10 @@ private:
 
   // ---------- matching helper ----------
   int majorityParticleForTrack(const edm4hep::Track& trk,
-                               const std::unordered_map<uint64_t, int>& hitToParticle) const {
+                               const std::unordered_map<podio::ObjectID, int>& hitToParticle) const {
     std::unordered_map<int, int> counts;
     for (const auto& h : trk.getTrackerHits()) {
-      const uint64_t hk = TrackingValidationHelpers::oidKey(h.getObjectID());
+      const auto hk = h.getObjectID();
       auto it = hitToParticle.find(hk);
       if (it == hitToParticle.end()) continue;
       counts[it->second] += 1;
@@ -620,7 +621,7 @@ private:
   void fillFitterTrees(int event,
                        const edm4hep::MCParticleCollection& mcParts,
                        const edm4hep::TrackCollection& fittedTracks,
-                       const std::unordered_map<uint64_t, int>& hitToParticle,
+                       const std::unordered_map<podio::ObjectID, int>& hitToParticle,
                        const PerfectMapT& perfectAtIPByPid,
                        bool doPerfect) const {
 
