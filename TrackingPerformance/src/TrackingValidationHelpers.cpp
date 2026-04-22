@@ -153,14 +153,13 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
   return hp;
 }
 
-bool getAtIPState(const edm4hep::Track& trk, edm4hep::TrackState& out) {
+std::optional<edm4hep::TrackState> getAtIPState(const edm4hep::Track& trk) {
   for (const auto& st : trk.getTrackStates()) {
     if (st.location == edm4hep::TrackState::AtIP) {
-      out = st;
-      return true;
+      return st;
     }
   }
-  return false;
+  return std::nullopt;
 }
 
 float ptFromState(const edm4hep::TrackState& st, float Bz) {

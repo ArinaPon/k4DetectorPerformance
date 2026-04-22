@@ -221,8 +221,8 @@ struct TrackingValidation final
         if (!coll) continue;
 
         for (const auto& trk : *coll) {
-          edm4hep::TrackState st;
-          if (!TrackingValidationHelpers::getAtIPState(trk, st)) continue;
+          auto st = TrackingValidationHelpers::getAtIPState(trk);
+          if (!st) continue;
 
           const int pid = majorityParticleForTrack(trk, hitToParticle);
           if (pid < 0 || pid >= (int)mcParts.size()) continue;
@@ -230,7 +230,7 @@ struct TrackingValidation final
           const int nHits = (int)trk.getTrackerHits().size();
           auto it = perfectAtIPByPid.find(pid);
           if (it == perfectAtIPByPid.end() || nHits > it->second.nHits) {
-            perfectAtIPByPid[pid] = StateWithNHits{st, nHits};
+            perfectAtIPByPid[pid] = StateWithNHits{*st, nHits};
           }
         }
       }
@@ -634,8 +634,8 @@ private:
 
     int tIdx = 0;
     for (const auto& trk : fittedTracks) {
-      edm4hep::TrackState stReco;
-      if (!TrackingValidationHelpers::getAtIPState(trk, stReco)) {
+      auto stReco = TrackingValidationHelpers::getAtIPState(trk);
+      if (!stReco) {
         ++tIdx;
         continue;
       }
@@ -650,13 +650,13 @@ private:
 
       // reco params (already in fitter convention)
       TrackingValidationHelpers::HelixParams reco;
-      reco.D0 = float(stReco.D0);
-      reco.Z0 = float(stReco.Z0);
-      reco.phi = float(stReco.phi);
-      reco.omega = float(stReco.omega);
-      reco.tanLambda = float(stReco.tanLambda);
-      reco.pT = TrackingValidationHelpers::ptFromState(stReco, m_Bz.value());
-      reco.p = TrackingValidationHelpers::momentumFromState(stReco, m_Bz.value());
+      reco.D0 = float(stReco->D0);
+      reco.Z0 = float(stReco->Z0);
+      reco.phi = float(stReco->phi);
+      reco.omega = float(stReco->omega);
+      reco.tanLambda = float(stReco->tanLambda);
+      reco.pT = TrackingValidationHelpers::ptFromState(*stReco, m_Bz.value());
+      reco.p = TrackingValidationHelpers::momentumFromState(*stReco, m_Bz.value());
 
       // ref from MC using the SAME convention as fitter (PCA + phi0 + ZPCA + omega=a*B/pT)
       const TrackingValidationHelpers::HelixParams refMC = TrackingValidationHelpers::truthFromMC_GenfitConvention(mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
@@ -664,7 +664,7 @@ private:
       
       // --- vs MC  ---
       m_fit_vs_mc.track_index.push_back(tIdx);
-      m_fit_vs_mc.track_location.push_back(int(stReco.location));
+      m_fit_vs_mc.track_location.push_back(int(stReco->location));
       m_fit_vs_mc.resD0.push_back(reco.D0 - refMC.D0);
       m_fit_vs_mc.resZ0.push_back(reco.Z0 - refMC.Z0);
       m_fit_vs_mc.resPhi.push_back(TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refMC.phi));
@@ -691,7 +691,7 @@ private:
           refP.p = TrackingValidationHelpers::momentumFromState(stPerf, m_Bz.value());
           
           m_fit_vs_perfect.track_index.push_back(tIdx);
-          m_fit_vs_perfect.track_location.push_back(int(stReco.location));
+          m_fit_vs_perfect.track_location.push_back(int(stReco->location));
           m_fit_vs_perfect.resD0.push_back(reco.D0 - refP.D0);
           m_fit_vs_perfect.resZ0.push_back(reco.Z0 - refP.Z0);
           m_fit_vs_perfect.resPhi.push_back(TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refP.phi));
@@ -703,7 +703,7 @@ private:
           m_fit_vs_perfect.pT_ref.push_back(refP.pT);
         } else {
           m_fit_vs_perfect.track_index.push_back(tIdx);
-          m_fit_vs_perfect.track_location.push_back(int(stReco.location));
+          m_fit_vs_perfect.track_location.push_back(int(stReco->location));
           m_fit_vs_perfect.resD0.push_back(NaN);
           m_fit_vs_perfect.resZ0.push_back(NaN);
           m_fit_vs_perfect.resPhi.push_back(NaN);

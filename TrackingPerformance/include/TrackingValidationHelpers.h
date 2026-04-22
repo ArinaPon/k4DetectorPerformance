@@ -23,9 +23,7 @@
 #include "edm4hep/MCParticle.h"
 #include "edm4hep/Track.h"
 #include "edm4hep/TrackState.h"
-#include "podio/ObjectID.h"
-
-#include <cstdint>
+#include <optional>
 
 namespace TrackingValidationHelpers {
 
@@ -49,7 +47,7 @@ struct PCAInfoHelper {
   bool ok = false;
 };
 
-/// Safe wrapper around std::atan2
+/// Wrapper around std::atan2
 float safeAtan2(float y, float x);
 
 /// Wrap a phi difference into the interval [-pi, pi]
@@ -82,8 +80,8 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
                                          float Bz,
                                          float refX, float refY, float refZ);
 
-/// Retrieve the track state stored at the interaction point                                         
-bool getAtIPState(const edm4hep::Track& trk, edm4hep::TrackState& out);
+/// Retrieve the track state stored at the interaction point, if available
+std::optional<edm4hep::TrackState> getAtIPState(const edm4hep::Track& trk);
 
 /// Compute the transverse momentum from a track state
 float ptFromState(const edm4hep::TrackState& st, float Bz);
