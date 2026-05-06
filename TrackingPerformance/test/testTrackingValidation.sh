@@ -2,15 +2,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MODEL_FILE="${1:-}"
 
-# Optional shell-level control of the simulation step
+MODEL_FILE="${1:-}"
+ENERGY_GEV="${2:-15}"
+THETA_DEG="${3:-20}"
+N_EVENTS="${4:-10000}"
+OUT_TAG="${5:-${ENERGY_GEV}GeV}"
+
 TRACKINGPERF_RUN_SIM="${TRACKINGPERF_RUN_SIM:-1}"
 TRACKINGPERF_INPUT_FILE_OVERRIDE="${TRACKINGPERF_INPUT_FILE_OVERRIDE:-}"
+TRACKINGPERF_KEEP_TMP="${TRACKINGPERF_KEEP_TMP:-0}"
 
 if [ -z "${MODEL_FILE}" ]; then
   echo "ERROR: missing ONNX model path argument"
-  echo "Usage: $0 /full/path/to/SimpleGatrIDEAv3o1.onnx"
+  echo "Usage: $0 /full/path/to/SimpleGatrIDEAv3o1.onnx ENERGY_GEV THETA_DEG N_EVENTS OUT_TAG"
   exit 1
 fi
 
@@ -46,9 +51,14 @@ if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   fi
 fi
 
+EOS_DIR="/eos/user/a/aponomar/Tracking/validation/${THETA_DEG}deg"
+mkdir -p "${EOS_DIR}"
+
 XML_FILE="${K4GEO}/FCCee/IDEA/compact/IDEA_o1_v03/IDEA_o1_v03.xml"
 RUN_FILE="${SCRIPT_DIR}/runTrackingValidation.py"
-VAL_FILE="${SCRIPT_DIR}/validation_output_test.root"
+
+VAL_FILE="${EOS_DIR}/validation_output_${OUT_TAG}.root"
+LOG_FILE="${EOS_DIR}/run_${OUT_TAG}.log"
 
 if [ ! -f "${XML_FILE}" ]; then
   echo "ERROR: geometry XML file not found: ${XML_FILE}"
@@ -60,8 +70,14 @@ if [ ! -f "${RUN_FILE}" ]; then
   exit 1
 fi
 
-TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/tracking_validation.XXXXXX")"
-trap 'rm -rf "${TMPDIR}"' EXIT
+TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/tracking_validation_${OUT_TAG}.XXXXXX")"
+echo "TMPDIR = ${TMPDIR}"
+
+if [ "${TRACKINGPERF_KEEP_TMP}" -eq 1 ]; then
+  echo "Keeping temporary directory after exit"
+else
+  trap 'rm -rf "${TMPDIR}"' EXIT
+fi
 
 STEERING_FILE="${TMPDIR}/SteeringFile_IDEA_o1_v03.py"
 SIM_FILE="${TMPDIR}/out_sim_edm4hep.root"
@@ -69,17 +85,15 @@ RECO_FILE="${TMPDIR}/out_reco.root"
 
 rm -f "${VAL_FILE}"
 
-N_EVENTS=5
 SEED=42
 
-# Decide which input file to pass to k4run
 if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   INPUT_FILE="${SIM_FILE}"
 else
   if [ -z "${TRACKINGPERF_INPUT_FILE_OVERRIDE}" ]; then
     echo "ERROR: TRACKINGPERF_RUN_SIM=0 but TRACKINGPERF_INPUT_FILE_OVERRIDE is empty"
     echo "Please provide an existing EDM4hep file, e.g."
-    echo "  TRACKINGPERF_RUN_SIM=0 TRACKINGPERF_INPUT_FILE_OVERRIDE=/path/to/input.root $0 /path/to/model.onnx"
+    echo "  TRACKINGPERF_RUN_SIM=0 TRACKINGPERF_INPUT_FILE_OVERRIDE=/path/to/input.root $0 /path/to/model.onnx ${ENERGY_GEV} ${THETA_DEG} ${N_EVENTS} ${OUT_TAG}"
     exit 1
   fi
 
@@ -98,19 +112,23 @@ echo "Geometry XML:               ${XML_FILE}"
 echo "Run script:                 ${RUN_FILE}"
 echo "ONNX model:                 ${MODEL_FILE}"
 echo "TRACKINGPERF_RUN_SIM:       ${TRACKINGPERF_RUN_SIM}"
+echo "TRACKINGPERF_KEEP_TMP:      ${TRACKINGPERF_KEEP_TMP}"
+echo "Energy [GeV]:               ${ENERGY_GEV}"
+echo "Theta [deg]:                ${THETA_DEG}"
+echo "Events:                     ${N_EVENTS}"
+echo "Seed:                       ${SEED}"
 echo "Input file:                 ${INPUT_FILE}"
 echo "Reco file:                  ${RECO_FILE}"
 echo "Validation file:            ${VAL_FILE}"
-echo "Events:                     ${N_EVENTS}"
-echo "Seed:                       ${SEED}"
+echo "Log file:                   ${LOG_FILE}"
 echo "runDigi:                    1"
 echo "runFinder:                  1"
 echo "runFitter:                  1"
-echo "runPerfectTracking:         1"
+echo "runPerfectTracking:         0"
 echo "runValidation:              1"
 echo "useDCH:                     1"
 echo "mode:                       0"
-echo "doPerfectFit:               1"
+echo "doPerfectFit:               0"
 echo "finderEfficiencyDefinition: 1"
 echo "finderPurityThreshold:      0.75"
 
@@ -131,10 +149,10 @@ if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
     --compactFile "${XML_FILE}" \
     -G \
     --gun.particle mu- \
-    --gun.energy "5*GeV" \
+    --gun.energy "${ENERGY_GEV}*GeV" \
     --gun.distribution uniform \
-    --gun.thetaMin "89*deg" \
-    --gun.thetaMax "89*deg" \
+    --gun.thetaMin "${THETA_DEG}*deg" \
+    --gun.thetaMax "${THETA_DEG}*deg" \
     --gun.phiMin "0*deg" \
     --gun.phiMax "0*deg" \
     --random.seed "${SEED}" \
@@ -159,14 +177,13 @@ k4run "${RUN_FILE}" \
   --runDigi 1 \
   --runFinder 1 \
   --runFitter 1 \
-  --runPerfectTracking 1 \
+  --runPerfectTracking 0 \
   --runValidation 1 \
   --useDCH 1 \
   --mode 0 \
-  --doPerfectFit 1 \
+  --doPerfectFit 0 \
   --finderEfficiencyDefinition 1 \
   --finderPurityThreshold 0.75
-
 if [ ! -f "${RECO_FILE}" ]; then
   echo "ERROR: reconstruction output was not created: ${RECO_FILE}"
   exit 1
@@ -185,4 +202,4 @@ test -f "${RECO_FILE}"
 test -f "${VAL_FILE}"
 
 echo "Test completed successfully."
-echo "Validation file:  ${VAL_FILE}"
+echo "Validation file: ${VAL_FILE}"

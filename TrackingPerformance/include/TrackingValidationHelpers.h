@@ -46,10 +46,6 @@ struct PCAInfoHelper {
   float phi0 = 0.f;
   bool ok = false;
 };
-
-/// Wrapper around std::atan2
-float safeAtan2(float y, float x);
-
 /// Wrap a phi difference into the interval [-pi, pi]
 float wrapDeltaPhi(float a, float b);
 

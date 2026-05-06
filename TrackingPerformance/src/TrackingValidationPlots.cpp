@@ -1,12 +1,15 @@
 #include "TrackingValidationPlots.h"
 #include "TStyle.h"
+#include "TAxis.h"
 #include <algorithm>
 #include <cmath>
-#include <memory>
+#include <limits>
 #include <vector>
+#include <numeric>
+#include <random>
 
 // makeLogBins
-//fitGaussianCore
+//interpolateQuantile
 //makeD0ResolutionVsMomentum
 //drawD0ResolutionCanvas
 //makeMomentumResolutionVsMomentum
@@ -16,6 +19,23 @@
 //drawEfficiencyCanvas
 
 namespace TrackingValidationPlots {
+
+namespace {
+double interpolateQuantile(const std::vector<double>& x, double q) {
+  if (x.empty()) return std::numeric_limits<double>::quiet_NaN();
+  if (x.size() == 1) return x[0];
+
+  const double pos = q * (x.size() - 1);
+  const std::size_t i = static_cast<std::size_t>(std::floor(pos));
+  const double frac = pos - static_cast<double>(i);
+
+  if (i +1 < x.size()) {
+    return x[i] * (1.0 - frac) + x[i +1] * frac;
+  }
+  return x[i];
+}
+} // namespace
+
 std::vector<double> makeLogBins(double min, double max, double step) {
   std::vector<double> bins;
   for (double x = std::log10(min); x <= std::log10(max); x += step) {
@@ -25,25 +45,83 @@ std::vector<double> makeLogBins(double min, double max, double step) {
   return bins;
 }
 
-TF1* fitGaussianCore(TH1F* h, const std::string& name) {
-  if (!h || h->GetEntries() < 10) return nullptr;
+EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fraction){
+  EffectiveSigmaResult out;
+  out.nEntries = values.size();
 
-  const double mean = h->GetMean();
-  const double rms  = h->GetRMS();
-  if (rms <= 0.) return nullptr;
+  if (values.size() < 2) return out;
+  if (!(fraction > 0.0 && fraction <= 1.0)) return out;
 
-  TF1* g1 = new TF1((name + "_g1").c_str(), "gaus", mean - 2.0 * rms, mean + 2.0 * rms);
-  h->Fit(g1, "RQ0");
+  std::sort(values.begin(), values.end());
+  out.median = interpolateQuantile(values, 0.5);
 
-  double m1 = g1->GetParameter(1);
-  double s1 = std::abs(g1->GetParameter(2));
-  if (s1 <= 0.) s1 = rms;
+  const std::size_t n = values.size();
+  std::size_t nWindow = static_cast<std::size_t>(std::ceil(fraction * static_cast<double>(n)));
+  nWindow = std::max<std::size_t>(2, nWindow);
+  nWindow = std::min<std::size_t>(n, nWindow);
 
-  TF1* g2 = new TF1(name.c_str(), "gaus", m1 - 1.5 * s1, m1 + 1.5 * s1);
-  h->Fit(g2, "RQ0");
+  double bestWidth = std::numeric_limits<double>::infinity();
+  std::size_t bestStart = 0;
 
-  return g2;
+  for (std::size_t i = 0; i + nWindow <= n; ++i) {
+    const std::size_t j = i + nWindow - 1;
+    const double width = values[j] - values[i];
+
+    if (width < bestWidth) {
+      bestWidth = width;
+      bestStart = i;
+    }
+  }
+
+  const double low = values[bestStart];
+  const double high = values[bestStart + nWindow - 1];
+
+  out.center = 0.5 * (low + high);
+  out.sigmaEff = 0.5 * (high - low);
+  out.valid = std::isfinite(out.sigmaEff);
+
+  return out;
 }
+
+double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
+                                           double fraction,
+                                           int nBootstrap,
+                                           unsigned int seed) {
+  if (values.size() < 5) return 0.0;
+  if (nBootstrap < 2) return 0.0;
+  
+  std::mt19937 rng(seed);
+  std::uniform_int_distribution<std::size_t> pick(0, values.size() - 1);
+
+  std::vector<double> boot;
+  boot.reserve(nBootstrap);
+
+  std::vector<double> sample(values.size());
+
+  for (int ib = 0; ib < nBootstrap; ++ib) {
+    for (std::size_t i = 0; i < values.size(); ++i) {
+      sample[i] = values[pick(rng)];
+    }
+
+    const auto eff = computeEffectiveSigma(sample, fraction);
+    if (eff.valid && std::isfinite(eff.sigmaEff)) {
+      boot.push_back(eff.sigmaEff);
+    }
+  }
+
+  if (boot.size() < 2) return 0.0;
+
+  const double mean = std::accumulate(boot.begin(), boot.end(), 0.0) / static_cast<double>(boot.size());
+
+  double var = 0.0;
+  for (double x : boot) {
+    const double dx = x - mean;
+    var += dx * dx;
+  }
+  var /= static_cast<double>(boot.size() - 1);
+
+  return std::sqrt(var);
+                                           }
 
 TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
                                          const char* graphName,
@@ -55,15 +133,7 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
 
-  std::vector<std::unique_ptr<TH1F>> hists;
-  hists.reserve(nBins);
-
-  for (int i = 0; i < nBins; ++i) {
-    hists.emplace_back(std::make_unique<TH1F>(
-        Form("h_d0_bin_%d", i),
-        Form("d0 residual bin %d;resD0 [#mum];Entries", i),
-        120, -20.0, 20.0));
-  }
+  std::vector<std::vector<double>> residualsPerBin(nBins);
 
   std::vector<float>* resD0 = nullptr;
   std::vector<float>* p_ref_vec = nullptr;
@@ -94,7 +164,7 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
       }
       if (bin < 0) continue;
 
-      hists[bin]->Fill(d0_um);
+      residualsPerBin[bin].push_back(d0_um);
     }
   }
 
@@ -104,16 +174,15 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (hists[b]->GetEntries() < 20) continue;
+    if (residualsPerBin[b].size() < 20) continue;
 
-    TF1* fit = fitGaussianCore(hists[b].get(), Form("fit_d0_bin_%d", b));
-    if (!fit) continue;
-
-    const double sigma = std::abs(fit->GetParameter(2));
-    const double sigmaErr = fit->GetParError(2);
+    const auto eff = computeEffectiveSigma(residualsPerBin[b]);
+    if (!eff.valid) continue;
+    
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
+    const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 12345u +b);
 
-    g->SetPoint(ip, pCenter, sigma);
+    g->SetPoint(ip, pCenter, eff.sigmaEff);
     g->SetPointError(ip, 0.0, sigmaErr);
     ++ip;
   }
@@ -150,15 +219,7 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
 
-  std::vector<std::unique_ptr<TH1F>> hists;
-  hists.reserve(nBins);
-
-  for (int i = 0; i < nBins; ++i) {
-    hists.emplace_back(std::make_unique<TH1F>(
-        Form("h_pres_bin_%d", i),
-        Form("p resolution bin %d;(p_{reco}-p_{ref})/p_{ref};Entries", i),
-        120, -0.2, 0.2));
-  }
+  std::vector<std::vector<double>> residualsPerBin(nBins);
 
   std::vector<float>* p_ref_vec = nullptr;
   std::vector<float>* p_reco_vec = nullptr;
@@ -192,7 +253,7 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
       }
       if (bin < 0) continue;
 
-      hists[bin]->Fill(res);
+      residualsPerBin[bin].push_back(res);
     }
   }
 
@@ -202,16 +263,17 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (hists[b]->GetEntries() < 20) continue;
+    if (residualsPerBin[b].size() < 20) continue;
 
-    TF1* fit = fitGaussianCore(hists[b].get(), Form("fit_pres_bin_%d", b));
-    if (!fit) continue;
+    
 
-    const double sigma = std::abs(fit->GetParameter(2));
-    const double sigmaErr = fit->GetParError(2);
+    const auto eff = computeEffectiveSigma(residualsPerBin[b]);
+    if (!eff.valid) continue;
+
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
+    const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 22345u + b);
 
-    g->SetPoint(ip, pCenter, sigma);
+    g->SetPoint(ip, pCenter, eff.sigmaEff);
     g->SetPointError(ip, 0.0, sigmaErr);
     ++ip;
   }
@@ -229,15 +291,7 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
 
-  std::vector<std::unique_ptr<TH1F>> hists;
-  hists.reserve(nBins);
-
-  for (int i = 0; i < nBins; ++i) {
-    hists.emplace_back(std::make_unique<TH1F>(
-        Form("h_ptres_bin_%d", i),
-        Form("pT resolution bin %d;(pT_{reco}-pT_{ref})/pT_{ref};Entries", i),
-        120, -0.2, 0.2));
-  }
+  std::vector<std::vector<double>> residualsPerBin(nBins);
 
   std::vector<float>* p_ref_vec = nullptr;
   std::vector<float>* pt_ref_vec = nullptr;
@@ -275,7 +329,7 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
       }
       if (bin < 0) continue;
 
-      hists[bin]->Fill(res);
+      residualsPerBin[bin].push_back(res);
     }
   }
 
@@ -285,16 +339,16 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (hists[b]->GetEntries() < 20) continue;
+    if (residualsPerBin[b].size() < 20) continue;
 
-    TF1* fit = fitGaussianCore(hists[b].get(), Form("fit_ptres_bin_%d", b));
-    if (!fit) continue;
+    const auto eff = computeEffectiveSigma(residualsPerBin[b]);
+    if (!eff.valid) continue;
 
-    const double sigma = std::abs(fit->GetParameter(2));
-    const double sigmaErr = fit->GetParError(2);
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
+    const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 32345u + b);
 
-    g->SetPoint(ip, pCenter, sigma);
+
+    g->SetPoint(ip, pCenter, eff.sigmaEff);
     g->SetPointError(ip, 0.0, sigmaErr);
     ++ip;
   }

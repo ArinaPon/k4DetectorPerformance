@@ -21,12 +21,10 @@
 #define TRACKINGVALIDATIONPLOTS_H
 
 #include "TCanvas.h"
-#include "TF1.h"
 #include "TGraphErrors.h"
-#include "TH1F.h"
 #include "TTree.h"
 
-#include <memory>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -35,15 +33,29 @@ namespace TrackingValidationPlots {
 /// Build logarithmic momentum bins    
 std::vector<double> makeLogBins(double min, double max, double step);
 
-/// Fit the Gaussian core of a histogram
-TF1* fitGaussianCore(TH1F* h, const std::string& name);
+/// Result of the effective-sigma extraction
+struct EffectiveSigmaResult {
+    double center = 0.0;    // center of the narrowest interval
+    double sigmaEff = 0.0;  // half-width of the narrowest interval
+    double median = 0.0;    // optional diagnostic info
+    bool valid = false;
+    std::size_t nEntries = 0;
+};
+
+/// Compute sigma_eff as half-width of the narrowest interval containing "fraction"of entries
+EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fraction = 0.6827);
+
+double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
+                                           double fraction = 0.6827,
+                                           int nBootstrap = 200,
+                                           unsigned int seed = 12345u);
 
 /**
  * @brief Build the d0 resolution as a function of momentum.
  *
- * The function reads the fitter validation tree, fills residual histograms in
- * momentum bins, fits the Gaussian core in each bin, and returns the extracted
- * sigma values as a TGraphErrors.
+ * The function reads the fitter validation tree, collects residual values in
+ momentum bins, extracts the effective sigma in each bean, and return the
+ result as a TGraphErrors.
  */
 
 TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
@@ -61,9 +73,9 @@ TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
 /**
  * @brief Build the total-momentum resolution as a function of momentum.
  *
- * The function reads the fitter validation tree, fills relative momentum
- * residual histograms in momentum bins, fits the Gaussian core in each bin,
- * and returns the extracted sigma values as a TGraphErrors.
+ * The function reads the fitter validation tree, collects relative momentum
+ * residual values in momentum bins, extracts the effective sigma in each bin,
+ and returns the result as a TGraphErrors.
  */                                
 TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
                                                const char* graphName = "g_p_resolution_vs_p",
@@ -74,9 +86,9 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
 /**
  * @brief Build the transverse-momentum resolution as a function of momentum.
  *
- * The function reads the fitter validation tree, fills relative transverse-
- * momentum residual histograms in momentum bins, fits the Gaussian core in
- * each bin, and returns the extracted sigma values as a TGraphErrors.
+ * The function reads the fitter validation tree, collects relative transverse-
+ * momentum residual values in momentum bins, extracts the effective sigma in
+ each bin, and returns the result as a TGraphErrors.
  */                                               
 TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
                                          const char* graphName = "g_pt_resolution_vs_p",
