@@ -28,6 +28,7 @@
 #include "Gaudi/Property.h"
 #include "GaudiKernel/MsgStream.h"
 
+
 // EDM4hep
 #include "edm4hep/MCParticleCollection.h"
 #include "edm4hep/TrackCollection.h"
@@ -39,7 +40,6 @@
 #include "TTree.h"
 #include "TGraphErrors.h"
 #include "TCanvas.h"
-
 
 // STL
 #include <algorithm>
@@ -70,8 +70,7 @@
  *
  *  input:
  *    - MC particle collection : edm4hep::MCParticleCollection
- *    - planar digi-to-sim link collections : std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>
- *    - drift-chamber digi-to-sim link collections : std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>
+ *    - digi-to-sim link collections : std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>
  *    - finder track collection : edm4hep::TrackCollection
  *    - fitted track collection : edm4hep::TrackCollection
  *    - optional perfect fitted-track collections : std::vector<const edm4hep::TrackCollection*>
@@ -90,10 +89,9 @@
 struct TrackingValidation final
     : k4FWCore::Consumer<void(
           const edm4hep::MCParticleCollection&,
-          const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>&,  // planar links
-          const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>&,  // optional DCH links
-          const edm4hep::TrackCollection&,                                            // finder tracks
-          const edm4hep::TrackCollection&,                                            // fitted tracks (reco)
+          const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>&,  // all digi-to-sim link collectionns
+          const std::vector<const edm4hep::TrackCollection*>&,                        // finder tracks
+          const std::vector<const edm4hep::TrackCollection*>&,                        // fitted tracks (reco)
           const std::vector<const edm4hep::TrackCollection*>&                         // optional perfect fitted tracks
           )> {
 
@@ -103,16 +101,12 @@ struct TrackingValidation final
             {
                 KeyValues("MCParticles", {"MCParticles"}),
 
-                KeyValues("PlanarLinks",
+                KeyValues("HitSimLinks",
                           {"SiWrBSimDigiLinks", "SiWrDSimDigiLinks", "VTXBSimDigiLinks", "VTXDSimDigiLinks"}),
-
-                
-                KeyValues("DCHLinks", {"DCH_DigiSimAssociationCollection"}),
 
                 KeyValues("FinderTracks", {"GGTFTracks"}),
                 KeyValues("FittedTracks", {"FittedTracks"}),
 
-                
                 KeyValues("PerfectFittedTracks", {"PerfectFittedTracks"}),
             }) {}
 
@@ -137,14 +131,36 @@ struct TrackingValidation final
   }
 
   void operator()(const edm4hep::MCParticleCollection& mcParts,
-                  const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>& planarLinksVec,
-                  const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>& dchLinksVec,
-                  const edm4hep::TrackCollection& finderTracks,
-                  const edm4hep::TrackCollection& fittedTracks,
+                  const std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>& linkCollections,
+                  const std::vector<const edm4hep::TrackCollection*>& finderTracksVec,
+                  const std::vector<const edm4hep::TrackCollection*>& fittedTracksVec,
                   const std::vector<const edm4hep::TrackCollection*>& perfectFittedTracksVec) const override {
 
     const int event = m_evt++;
     const int mode = m_mode.value();  // 0 full, 1 finder-only, 2 fitter-only
+
+    const edm4hep::TrackCollection* finderTracks =
+        finderTracksVec.empty() ? nullptr : finderTracksVec.front();
+
+    const edm4hep::TrackCollection* fittedTracks =
+        fittedTracksVec.empty() ? nullptr : fittedTracksVec.front();
+
+    const bool needFinderTracks = (mode == 0 || mode == 1);
+    const bool needFittedTracks = (mode == 0 || mode == 2);
+
+    if (needFinderTracks && !finderTracks && !m_warnedMissingFinderInput) {
+      warning() << "FinderTracks input is empty, but Mode=" << mode
+                << " requires finder-track validation. Finder association trees will not be filled."
+                << endmsg;
+      m_warnedMissingFinderInput = true;
+    }
+
+    if (needFittedTracks && !fittedTracks && !m_warnedMissingFittedInput) {
+      warning() << "FittedTracks input is empty, but Mode=" << mode
+                << " requires fitter validation. Fitter residual trees will not be filled."
+                << endmsg;
+      m_warnedMissingFittedInput = true;
+    }
 
     // ---------- Build truth maps: hit -> particle, particle -> hits ----------
     std::unordered_map<int, std::vector<podio::ObjectID>> hitsPerParticle;
@@ -153,29 +169,13 @@ struct TrackingValidation final
     std::unordered_map<podio::ObjectID, int> hitToParticle;
     hitToParticle.reserve(200000);
 
-    // planar links
-    for (const auto* links : planarLinksVec) {
+    // digi-to-sim links
+    for (const auto* links : linkCollections) {
       if (!links) continue;
       for (const auto& link : *links) {
         const auto digi = link.getFrom();
-        const auto sim  = link.getTo();
-        const auto mc   = sim.getParticle();
-        if (!digi.isAvailable() || !mc.isAvailable()) continue;
-
-        const int pid = mc.getObjectID().index;
-        const podio::ObjectID key = digi.getObjectID();
-        hitsPerParticle[pid].push_back(key);
-        hitToParticle[key] = pid;
-      }
-    }
-
-    // DCH links
-    for (const auto* links : dchLinksVec) {
-      if (!links) continue;
-      for (const auto& link : *links) {
-        const auto digi = link.getFrom();
-        const auto sim  = link.getTo();
-        const auto mc   = sim.getParticle();
+        const auto sim = link.getTo();
+        const auto mc = sim.getParticle();
         if (!digi.isAvailable() || !mc.isAvailable()) continue;
 
         const int pid = mc.getObjectID().index;
@@ -186,9 +186,9 @@ struct TrackingValidation final
     }
 
     // ---------- Finder & Perfect association trees ----------
-    if (mode == 0 || mode == 1) {
+    if ((mode == 0 || mode == 1) && finderTracks) {
       fillPerfectAssoc(event, mcParts, hitsPerParticle);
-      fillFinderAssoc(event, mcParts, finderTracks, hitToParticle, hitsPerParticle);
+      fillFinderAssoc(event, mcParts, *finderTracks, hitToParticle, hitsPerParticle);
     }
 
     // ---------- Build pid -> best perfect-fitted AtIP state ----------
@@ -237,8 +237,8 @@ struct TrackingValidation final
     }
 
     // ---------- Fitter trees ----------
-    if (mode == 0 || mode == 2) {
-      fillFitterTrees(event, mcParts, fittedTracks, hitToParticle, perfectAtIPByPid, doPerfect);
+    if ((mode == 0 || mode == 2) && fittedTracks) {
+      fillFitterTrees(event, mcParts, *fittedTracks, hitToParticle, perfectAtIPByPid, doPerfect);
     }
   }
 
@@ -248,7 +248,7 @@ struct TrackingValidation final
     if (m_outFile) {
       m_outFile->cd();
 
-      //write trees
+      // write trees
       if (m_finder_p2t.tree) m_finder_p2t.tree->Write();
       if (m_finder_t2p.tree) m_finder_t2p.tree->Write();
       if (m_perf_p2t.tree) m_perf_p2t.tree->Write();
@@ -257,40 +257,47 @@ struct TrackingValidation final
       if (m_fit_vs_mc.tree) m_fit_vs_mc.tree->Write();
       if (m_fit_vs_perfect.tree) m_fit_vs_perfect.tree->Write();
 
-      //fitter summary plots
+      // fitter summary plots
       // d0 resolution vs momentum from fitter_vs_mc
-      TGraphErrors* g_d0_vs_p = TrackingValidationPlots::makeD0ResolutionVsMomentum(m_fit_vs_mc.tree,
-                                                         "g_d0_resolution_vs_p",
-                                                         0.1, 100.0, 0.15);
+      TGraphErrors* g_d0_vs_p = TrackingValidationPlots::makeD0ResolutionVsMomentum(
+          m_fit_vs_mc.tree,
+          "g_d0_resolution_vs_p",
+          0.1, 100.0, 0.15);
       if (g_d0_vs_p) {
-        TCanvas* c_d0_vs_p = TrackingValidationPlots::drawD0ResolutionCanvas(g_d0_vs_p,
-                                                  "c_d0_resolution_vs_p",
-                                                  0.1, 100.0);
+        TCanvas* c_d0_vs_p = TrackingValidationPlots::drawD0ResolutionCanvas(
+            g_d0_vs_p,
+            "c_d0_resolution_vs_p",
+            0.1, 100.0);
         g_d0_vs_p->Write();
         if (c_d0_vs_p) c_d0_vs_p->Write();
       }
+
       // p resolution vs momentum
-      TGraphErrors* g_p_vs_p = TrackingValidationPlots::makeMomentumResolutionVsMomentum(m_fit_vs_mc.tree,
-                                                          "g_p_resolution_vs_p",
-                                                          0.1, 100.0, 0.15);
+      TGraphErrors* g_p_vs_p = TrackingValidationPlots::makeMomentumResolutionVsMomentum(
+          m_fit_vs_mc.tree,
+          "g_p_resolution_vs_p",
+          0.1, 100.0, 0.15);
       if (g_p_vs_p) {
-        TCanvas* c_p_vs_p = TrackingValidationPlots::drawResolutionCanvas(g_p_vs_p,
-                                           "c_p_resolution_vs_p",
-                                           "momentum resolution vs momentum;p_{ref} [GeV];#sigma((p_{reco}-p_{ref})/p_{ref})",
-                                           0.1, 100.0);
+        TCanvas* c_p_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_p_vs_p,
+            "c_p_resolution_vs_p",
+            "momentum resolution vs momentum;p_{ref} [GeV];#sigma((p_{reco}-p_{ref})/p_{ref})",
+            0.1, 100.0);
         g_p_vs_p->Write();
         if (c_p_vs_p) c_p_vs_p->Write();
       }
 
       // pT resolution vs momentum
-      TGraphErrors* g_pt_vs_p = TrackingValidationPlots::makePtResolutionVsMomentum(m_fit_vs_mc.tree,
-                                                     "g_pt_resolution_vs_p",
-                                                     0.1, 100.0, 0.15);
+      TGraphErrors* g_pt_vs_p = TrackingValidationPlots::makePtResolutionVsMomentum(
+          m_fit_vs_mc.tree,
+          "g_pt_resolution_vs_p",
+          0.1, 100.0, 0.15);
       if (g_pt_vs_p) {
-        TCanvas* c_pt_vs_p = TrackingValidationPlots::drawResolutionCanvas(g_pt_vs_p,
-                                            "c_pt_resolution_vs_p",
-                                            "pT resolution vs momentum;p_{ref} [GeV];#sigma((pT_{reco}-pT_{ref})/pT_{ref})",
-                                            0.1, 100.0);
+        TCanvas* c_pt_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_pt_vs_p,
+            "c_pt_resolution_vs_p",
+            "pT resolution vs momentum;p_{ref} [GeV];#sigma((pT_{reco}-pT_{ref})/pT_{ref})",
+            0.1, 100.0);
         g_pt_vs_p->Write();
         if (c_pt_vs_p) c_pt_vs_p->Write();
       }
@@ -310,9 +317,8 @@ struct TrackingValidation final
             0.1, 100.0);
         g_eff_vs_p->Write();
         if (c_eff_vs_p) c_eff_vs_p->Write();
-        
       }
-    
+
       m_outFile->Close();
     }
     return StatusCode::SUCCESS;
@@ -330,21 +336,19 @@ private:
   Gaudi::Property<float> m_refX{this, "RefPointX", 0.f, "Reference point X [mm] (must match fitter m_VP_referencePoint)"};
   Gaudi::Property<float> m_refY{this, "RefPointY", 0.f, "Reference point Y [mm] (must match fitter m_VP_referencePoint)"};
   Gaudi::Property<float> m_refZ{this, "RefPointZ", 0.f, "Reference point Z [mm] (must match fitter m_VP_referencePoint)"};
-  
-// Definition used for the summary tracking-efficiency plot.
-// Default = 1 keeps the current behaviour unchanged.
+
+  // Definition used for the summary tracking-efficiency plot.
+  // Default = 1 keeps the current behaviour unchanged.
   Gaudi::Property<int> m_finderEfficiencyDefinition{
-  this, "FinderEfficiencyDefinition", 1,
-  "Definition used for the tracking-efficiency summary plot: "
-  "1 = require purity >= FinderPurityThreshold; "
-  "2 = require purity >= 0.5 and efficiency >= 0.5"
-      };
+      this, "FinderEfficiencyDefinition", 1,
+      "Definition used for the tracking-efficiency summary plot: "
+      "1 = require purity >= FinderPurityThreshold; "
+      "2 = require purity >= 0.5 and efficiency >= 0.5"};
 
   Gaudi::Property<float> m_finderPurityThreshold{
-  this, "FinderPurityThreshold", 0.75f,
-  "Minimum purity for a particle-track match to count in tracking efficiency "
-  "when FinderEfficiencyDefinition = 1"
-      };
+      this, "FinderPurityThreshold", 0.75f,
+      "Minimum purity for a particle-track match to count in tracking efficiency "
+      "when FinderEfficiencyDefinition = 1"};
 
   Gaudi::Property<bool> m_doPerfectFit{
       this, "DoPerfectFit", false,
@@ -355,10 +359,21 @@ private:
   struct AssocTree {
     TTree* tree = nullptr;
     int event = 0;
+
     std::vector<int> index;
+
+    // MC-particle truth information stored for optional downstream selections.
+    // These values are meaningful for particle -> track trees.
+    // For track -> particle trees, placeholder values are filled.
     std::vector<float> p;
     std::vector<float> pT;
-    std::vector<int> nTrueHits; 
+    std::vector<float> theta;       // polar angle [rad]
+    std::vector<float> vertexR;     // production vertex radius sqrt(x^2 + y^2) [mm]
+    std::vector<float> vertexZ;     // production vertex z [mm]
+    std::vector<float> charge;
+    std::vector<int> pdg;
+
+    std::vector<int> nTrueHits;
     std::vector<std::vector<int>> assoc;
 
     // only really used for finder_particle_to_tracks
@@ -366,16 +381,23 @@ private:
     std::vector<std::vector<float>> matchEfficiency;
     std::vector<std::vector<float>> matchPurity;
 
-    void clear() { 
-        index.clear(); 
-        p.clear();
-        pT.clear();
-        nTrueHits.clear();
-        assoc.clear();
-        sharedHits.clear();
-        matchEfficiency.clear();
-        matchPurity.clear();
-     }
+    void clear() {
+      index.clear();
+
+      p.clear();
+      pT.clear();
+      theta.clear();
+      vertexR.clear();
+      vertexZ.clear();
+      charge.clear();
+      pdg.clear();
+
+      nTrueHits.clear();
+      assoc.clear();
+      sharedHits.clear();
+      matchEfficiency.clear();
+      matchPurity.clear();
+    }
   };
 
   struct FitterTree {
@@ -410,6 +432,11 @@ private:
     t.tree->Branch("index", &t.index);
     t.tree->Branch("p", &t.p);
     t.tree->Branch("pT", &t.pT);
+    t.tree->Branch("theta", &t.theta);
+    t.tree->Branch("vertexR", &t.vertexR);
+    t.tree->Branch("vertexZ", &t.vertexZ);
+    t.tree->Branch("charge", &t.charge);
+    t.tree->Branch("pdg", &t.pdg);
     t.tree->Branch("nTrueHits", &t.nTrueHits);
     t.tree->Branch("assoc", &t.assoc);
     t.tree->Branch("sharedHits", &t.sharedHits);
@@ -448,17 +475,31 @@ private:
 
       auto it = hitsPerParticle.find(i);
       if (it == hitsPerParticle.end() || it->second.empty()) continue;
+
       const auto& mom = mc.getMomentum();
       const float px = float(mom.x);
       const float py = float(mom.y);
       const float pz = float(mom.z);
-      const float p  = std::sqrt(px*px + py*py + pz*pz);
-      const float pT = std::sqrt(px*px + py*py);
+      const float p = std::sqrt(px * px + py * py + pz * pz);
+      const float pT = std::sqrt(px * px + py * py);
       const int nHits = (int)it->second.size();
+
+      const auto& vtx = mc.getVertex();
+      const float theta = std::atan2(pT, pz);
+      const float vertexR = std::sqrt(float(vtx.x) * float(vtx.x) +
+                                      float(vtx.y) * float(vtx.y));
+      const float vertexZ = float(vtx.z);
+      const float charge = float(mc.getCharge());
+      const int pdg = mc.getPDG();
 
       m_perf_p2t.index.push_back(i);
       m_perf_p2t.p.push_back(p);
       m_perf_p2t.pT.push_back(pT);
+      m_perf_p2t.theta.push_back(theta);
+      m_perf_p2t.vertexR.push_back(vertexR);
+      m_perf_p2t.vertexZ.push_back(vertexZ);
+      m_perf_p2t.charge.push_back(charge);
+      m_perf_p2t.pdg.push_back(pdg);
       m_perf_p2t.nTrueHits.push_back(nHits);
       m_perf_p2t.assoc.push_back({i});
       m_perf_p2t.sharedHits.push_back({});
@@ -468,6 +509,11 @@ private:
       m_perf_t2p.index.push_back(i);
       m_perf_t2p.p.push_back(p);
       m_perf_t2p.pT.push_back(pT);
+      m_perf_t2p.theta.push_back(theta);
+      m_perf_t2p.vertexR.push_back(vertexR);
+      m_perf_t2p.vertexZ.push_back(vertexZ);
+      m_perf_t2p.charge.push_back(charge);
+      m_perf_t2p.pdg.push_back(pdg);
       m_perf_t2p.nTrueHits.push_back(nHits);
       m_perf_t2p.assoc.push_back({i});
       m_perf_t2p.sharedHits.push_back({});
@@ -480,118 +526,136 @@ private:
   }
 
   void fillFinderAssoc(int event, const edm4hep::MCParticleCollection& mcParts,
-                     const edm4hep::TrackCollection& finderTracks,
-                     const std::unordered_map<podio::ObjectID, int>& hitToParticle,
-                     const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle) const {
+                       const edm4hep::TrackCollection& finderTracks,
+                       const std::unordered_map<podio::ObjectID, int>& hitToParticle,
+                       const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle) const {
 
-  m_finder_p2t.clear();
-  m_finder_t2p.clear();
-  m_finder_p2t.event = event;
-  m_finder_t2p.event = event;
+    m_finder_p2t.clear();
+    m_finder_t2p.clear();
+    m_finder_p2t.event = event;
+    m_finder_t2p.event = event;
 
-  std::vector<std::unordered_map<int, int>> trackParticleCounts;
-  std::vector<int> trackNHits;
-  trackParticleCounts.resize(finderTracks.size());
-  trackNHits.resize(finderTracks.size(), 0);
+    std::vector<std::unordered_map<int, int>> trackParticleCounts;
+    std::vector<int> trackNHits;
+    trackParticleCounts.resize(finderTracks.size());
+    trackNHits.resize(finderTracks.size(), 0);
 
-  int tIdx = 0;
-  for (const auto& trk : finderTracks) {
-    trackNHits[tIdx] = (int)trk.getTrackerHits().size();
-    for (const auto& h : trk.getTrackerHits()) {
-      const auto hk = h.getObjectID();
-      auto it = hitToParticle.find(hk);
-      if (it == hitToParticle.end()) continue;
-      trackParticleCounts[tIdx][it->second] += 1;
-    }
-    ++tIdx;
-  }
-
-  // track -> particles
-  for (int t = 0; t < (int)finderTracks.size(); ++t) {
-    m_finder_t2p.index.push_back(t);
-    m_finder_t2p.p.push_back(-1.f);
-    m_finder_t2p.pT.push_back(-1.f);
-    m_finder_t2p.nTrueHits.push_back(trackNHits[t]);
-
-    std::vector<int> parts;
-    std::vector<int> sh;
-    std::vector<float> effs;
-    std::vector<float> purs;
-
-    for (const auto& kv : trackParticleCounts[t]) {
-      const int pid = kv.first;
-      if (pid < 0) continue;
-
-      const int shared = kv.second;
-      const int nTrackHits = trackNHits[t];
-      const int nParticleHits =
-          hitsPerParticle.count(pid) ? (int)hitsPerParticle.at(pid).size() : 0;
-
-      const float eff = (nParticleHits > 0) ? float(shared) / float(nParticleHits) : 0.f;
-      const float pur = (nTrackHits > 0) ? float(shared) / float(nTrackHits) : 0.f;
-
-      parts.push_back(pid);
-      sh.push_back(shared);
-      effs.push_back(eff);
-      purs.push_back(pur);
+    int tIdx = 0;
+    for (const auto& trk : finderTracks) {
+      trackNHits[tIdx] = (int)trk.getTrackerHits().size();
+      for (const auto& h : trk.getTrackerHits()) {
+        const auto hk = h.getObjectID();
+        auto it = hitToParticle.find(hk);
+        if (it == hitToParticle.end()) continue;
+        trackParticleCounts[tIdx][it->second] += 1;
+      }
+      ++tIdx;
     }
 
-    m_finder_t2p.assoc.push_back(parts);
-    m_finder_t2p.sharedHits.push_back(sh);
-    m_finder_t2p.matchEfficiency.push_back(effs);
-    m_finder_t2p.matchPurity.push_back(purs);
-  }
-
-  // particle -> tracks
-  for (int p = 0; p < (int)mcParts.size(); ++p) {
-    const auto& mc = mcParts[p];
-    if (mc.getGeneratorStatus() != 1) continue;
-
-    auto itHits = hitsPerParticle.find(p);
-    if (itHits == hitsPerParticle.end() || itHits->second.empty()) continue;
-
-    const auto& mom = mc.getMomentum();
-    const float px = float(mom.x);
-    const float py = float(mom.y);
-    const float pz = float(mom.z);
-    const float pAbs = std::sqrt(px*px + py*py + pz*pz);
-    const float pT = std::sqrt(px*px + py*py);
-    const int nParticleHits = (int)itHits->second.size();
-
-    std::vector<int> tracks;
-    std::vector<int> sh;
-    std::vector<float> effs;
-    std::vector<float> purs;
-
+    // track -> particles
     for (int t = 0; t < (int)finderTracks.size(); ++t) {
-      auto it = trackParticleCounts[t].find(p);
-      if (it == trackParticleCounts[t].end()) continue;
+      m_finder_t2p.index.push_back(t);
+      m_finder_t2p.p.push_back(-1.f);
+      m_finder_t2p.pT.push_back(-1.f);
+      m_finder_t2p.theta.push_back(-1.f);
+      m_finder_t2p.vertexR.push_back(-1.f);
+      m_finder_t2p.vertexZ.push_back(-1.f);
+      m_finder_t2p.charge.push_back(0.f);
+      m_finder_t2p.pdg.push_back(0);
+      m_finder_t2p.nTrueHits.push_back(trackNHits[t]);
 
-      const int shared = it->second;
-      const int nTrackHits = trackNHits[t];
+      std::vector<int> parts;
+      std::vector<int> sh;
+      std::vector<float> effs;
+      std::vector<float> purs;
 
-      const float eff = (nParticleHits > 0) ? float(shared) / float(nParticleHits) : 0.f;
-      const float pur = (nTrackHits > 0) ? float(shared) / float(nTrackHits) : 0.f;
+      for (const auto& kv : trackParticleCounts[t]) {
+        const int pid = kv.first;
+        if (pid < 0) continue;
 
-      tracks.push_back(t);
-      sh.push_back(shared);
-      effs.push_back(eff);
-      purs.push_back(pur);
+        const int shared = kv.second;
+        const int nTrackHits = trackNHits[t];
+        const int nParticleHits =
+            hitsPerParticle.count(pid) ? (int)hitsPerParticle.at(pid).size() : 0;
+
+        const float eff = (nParticleHits > 0) ? float(shared) / float(nParticleHits) : 0.f;
+        const float pur = (nTrackHits > 0) ? float(shared) / float(nTrackHits) : 0.f;
+
+        parts.push_back(pid);
+        sh.push_back(shared);
+        effs.push_back(eff);
+        purs.push_back(pur);
+      }
+
+      m_finder_t2p.assoc.push_back(parts);
+      m_finder_t2p.sharedHits.push_back(sh);
+      m_finder_t2p.matchEfficiency.push_back(effs);
+      m_finder_t2p.matchPurity.push_back(purs);
     }
 
-    m_finder_p2t.index.push_back(p);
-    m_finder_p2t.p.push_back(pAbs);
-    m_finder_p2t.pT.push_back(pT);
-    m_finder_p2t.nTrueHits.push_back(nParticleHits);
-    m_finder_p2t.assoc.push_back(tracks);
-    m_finder_p2t.sharedHits.push_back(sh);
-    m_finder_p2t.matchEfficiency.push_back(effs);
-    m_finder_p2t.matchPurity.push_back(purs);
-  }
+    // particle -> tracks
+    for (int p = 0; p < (int)mcParts.size(); ++p) {
+      const auto& mc = mcParts[p];
+      if (mc.getGeneratorStatus() != 1) continue;
 
-  if (m_finder_p2t.tree) m_finder_p2t.tree->Fill();
-  if (m_finder_t2p.tree) m_finder_t2p.tree->Fill();
-}
+      auto itHits = hitsPerParticle.find(p);
+      if (itHits == hitsPerParticle.end() || itHits->second.empty()) continue;
+
+      const auto& mom = mc.getMomentum();
+      const float px = float(mom.x);
+      const float py = float(mom.y);
+      const float pz = float(mom.z);
+      const float pAbs = std::sqrt(px * px + py * py + pz * pz);
+      const float pT = std::sqrt(px * px + py * py);
+      const int nParticleHits = (int)itHits->second.size();
+
+      const auto& vtx = mc.getVertex();
+      const float theta = std::atan2(pT, pz);
+      const float vertexR = std::sqrt(float(vtx.x) * float(vtx.x) +
+                                      float(vtx.y) * float(vtx.y));
+      const float vertexZ = float(vtx.z);
+      const float charge = float(mc.getCharge());
+      const int pdg = mc.getPDG();
+
+      std::vector<int> tracks;
+      std::vector<int> sh;
+      std::vector<float> effs;
+      std::vector<float> purs;
+
+      for (int t = 0; t < (int)finderTracks.size(); ++t) {
+        auto it = trackParticleCounts[t].find(p);
+        if (it == trackParticleCounts[t].end()) continue;
+
+        const int shared = it->second;
+        const int nTrackHits = trackNHits[t];
+
+        const float eff = (nParticleHits > 0) ? float(shared) / float(nParticleHits) : 0.f;
+        const float pur = (nTrackHits > 0) ? float(shared) / float(nTrackHits) : 0.f;
+
+        tracks.push_back(t);
+        sh.push_back(shared);
+        effs.push_back(eff);
+        purs.push_back(pur);
+      }
+
+      m_finder_p2t.index.push_back(p);
+      m_finder_p2t.p.push_back(pAbs);
+      m_finder_p2t.pT.push_back(pT);
+      m_finder_p2t.theta.push_back(theta);
+      m_finder_p2t.vertexR.push_back(vertexR);
+      m_finder_p2t.vertexZ.push_back(vertexZ);
+      m_finder_p2t.charge.push_back(charge);
+      m_finder_p2t.pdg.push_back(pdg);
+      m_finder_p2t.nTrueHits.push_back(nParticleHits);
+      m_finder_p2t.assoc.push_back(tracks);
+      m_finder_p2t.sharedHits.push_back(sh);
+      m_finder_p2t.matchEfficiency.push_back(effs);
+      m_finder_p2t.matchPurity.push_back(purs);
+    }
+
+    if (m_finder_p2t.tree) m_finder_p2t.tree->Fill();
+    if (m_finder_t2p.tree) m_finder_t2p.tree->Fill();
+  }
 
   // ---------- matching helper ----------
   int majorityParticleForTrack(const edm4hep::Track& trk,
@@ -648,7 +712,7 @@ private:
 
       const auto& mc = mcParts[pid];
 
-      // reco params (already in fitter convention)
+      // reco params 
       TrackingValidationHelpers::HelixParams reco;
       reco.D0 = float(stReco->D0);
       reco.Z0 = float(stReco->Z0);
@@ -659,10 +723,11 @@ private:
       reco.p = TrackingValidationHelpers::momentumFromState(*stReco, m_Bz.value());
 
       // ref from MC using the SAME convention as fitter (PCA + phi0 + ZPCA + omega=a*B/pT)
-      const TrackingValidationHelpers::HelixParams refMC = TrackingValidationHelpers::truthFromMC_GenfitConvention(mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
-  
-      
-      // --- vs MC  ---
+      const TrackingValidationHelpers::HelixParams refMC =
+          TrackingValidationHelpers::truthFromMC_GenfitConvention(
+              mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
+
+      // --- vs MC ---
       m_fit_vs_mc.track_index.push_back(tIdx);
       m_fit_vs_mc.track_location.push_back(int(stReco->location));
       m_fit_vs_mc.resD0.push_back(reco.D0 - refMC.D0);
@@ -675,7 +740,7 @@ private:
       m_fit_vs_mc.pT_reco.push_back(reco.pT);
       m_fit_vs_mc.pT_ref.push_back(refMC.pT);
 
-      // --- vs perfect-fitted  ---
+      // --- vs perfect-fitted ---
       if (doPerfect) {
         auto it = perfectAtIPByPid.find(pid);
         if (it != perfectAtIPByPid.end()) {
@@ -689,7 +754,7 @@ private:
           refP.tanLambda = float(stPerf.tanLambda);
           refP.pT = TrackingValidationHelpers::ptFromState(stPerf, m_Bz.value());
           refP.p = TrackingValidationHelpers::momentumFromState(stPerf, m_Bz.value());
-          
+
           m_fit_vs_perfect.track_index.push_back(tIdx);
           m_fit_vs_perfect.track_location.push_back(int(stReco->location));
           m_fit_vs_perfect.resD0.push_back(reco.D0 - refP.D0);
@@ -726,7 +791,8 @@ private:
 private:
   mutable int m_evt = 0;
   mutable bool m_warnedMissingPerfectInput = false;
-
+  mutable bool m_warnedMissingFinderInput = false;
+  mutable bool m_warnedMissingFittedInput = false;
   std::unique_ptr<TFile> m_outFile;
 
   mutable AssocTree m_finder_p2t;
@@ -739,3 +805,4 @@ private:
 };
 
 DECLARE_COMPONENT(TrackingValidation)
+

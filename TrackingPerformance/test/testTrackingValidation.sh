@@ -51,14 +51,13 @@ if [ "${TRACKINGPERF_RUN_SIM}" -eq 1 ]; then
   fi
 fi
 
-EOS_DIR="/eos/user/a/aponomar/Tracking/validation/${THETA_DEG}deg"
-mkdir -p "${EOS_DIR}"
+VALIDATION_FILE="${VALIDATION_FILE:-validation.root}"
 
 XML_FILE="${K4GEO}/FCCee/IDEA/compact/IDEA_o1_v03/IDEA_o1_v03.xml"
 RUN_FILE="${SCRIPT_DIR}/runTrackingValidation.py"
 
-VAL_FILE="${EOS_DIR}/validation_output_${OUT_TAG}.root"
-LOG_FILE="${EOS_DIR}/run_${OUT_TAG}.log"
+VAL_FILE="${VALIDATION_FILE}"
+LOG_FILE="${LOG_FILE:-run_${OUT_TAG}.log}"
 
 if [ ! -f "${XML_FILE}" ]; then
   echo "ERROR: geometry XML file not found: ${XML_FILE}"

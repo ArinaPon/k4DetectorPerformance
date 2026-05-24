@@ -28,11 +28,6 @@ namespace TrackingValidationHelpers {
 static constexpr float c_mm_s = 2.998e11f;
 static constexpr float a_genfit = 1e-15f * c_mm_s;
 
-
-float safeAtan2(float y, float x) {
-  return std::atan2(y, x);
-}
-
 float wrapDeltaPhi(float a, float b) {
   float d = a - b;
   while (d >  M_PI) d -= 2.f * M_PI;
@@ -146,7 +141,7 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
   hp.D0 = ((-(refX - info.pcaX)) * std::sin(info.phi0) +
            (refY - info.pcaY) * std::cos(info.phi0));
   hp.Z0 = (info.pcaZ - refZ);
-  hp.phi = safeAtan2(py, px);
+  hp.phi = std::atan2(py, px);
   hp.tanLambda = (pT > 0.f) ? (pz / pT) : 0.f;
   hp.omega = (pT > 0.f) ? (std::abs(a_genfit * Bz / pT) * float(qSign)) : 0.f;
 

@@ -12,36 +12,36 @@ from k4FWCore.parseArgs import parser
 parser.add_argument("--inputFile", required=True,
                     help="Input EDM4hep ROOT file")
 parser.add_argument("--modelPath", default="",
-                    help="Path to the GGTF ONNX model (required only if --runFinder 1)")
+                    help="Path to the GGTF ONNX model, required only if --runFinder 1")
 parser.add_argument("--outputFile", default="out_reco.root",
                     help="Output EDM4hep ROOT file with reconstructed collections")
 parser.add_argument("--validationFile", default="validation.root",
                     help="Output ROOT file written by TrackingValidation")
 
-parser.add_argument("--geom",
+parser.add_argument("--compactFile",
                     default=os.path.join(os.environ["K4GEO"], "FCCee/IDEA/compact/IDEA_o1_v03/IDEA_o1_v03.xml"),
                     help="Detector geometry XML file")
 
 # Pipeline control
-parser.add_argument("--runDigi", type=int, default=1,
+parser.add_argument("--runDigi", type=int, default=1, choices=[0, 1],
                     help="0=skip digitization, 1=run digitization")
-parser.add_argument("--runFinder", type=int, default=1,
+parser.add_argument("--runFinder", type=int, default=1, choices=[0, 1],
                     help="0=skip track finder, 1=run track finder")
-parser.add_argument("--runFitter", type=int, default=1,
+parser.add_argument("--runFitter", type=int, default=1, choices=[0, 1],
                     help="0=skip reco fitter, 1=run reco fitter")
-parser.add_argument("--runPerfectTracking", type=int, default=1,
+parser.add_argument("--runPerfectTracking", type=int, default=1, choices=[0, 1],
                     help="0=skip perfect tracking/perfect fitter, 1=run them")
-parser.add_argument("--runValidation", type=int, default=1,
+parser.add_argument("--runValidation", type=int, default=1, choices=[0, 1],
                     help="0=skip validation, 1=run TrackingValidation")
-parser.add_argument("--useDCH", type=int, default=1,
+parser.add_argument("--useDCH", type=int, default=1, choices=[0, 1],
                     help="0=disable DCH collections, 1=use DCH collections")
 
 # Validation control
-parser.add_argument("--mode", type=int, default=0,
+parser.add_argument("--mode", type=int, default=0, choices=[0, 1, 2],
                     help="Validation mode: 0=Full, 1=FinderOnly, 2=FitterOnly")
-parser.add_argument("--doPerfectFit", type=int, default=1,
+parser.add_argument("--doPerfectFit", type=int, default=1, choices=[0, 1],
                     help="0=do not fill fitter_vs_perfect, 1=fill fitter_vs_perfect")
-parser.add_argument("--finderEfficiencyDefinition", type=int, default=1,
+parser.add_argument("--finderEfficiencyDefinition", type=int, default=1, choices=[1, 2],
                     help="1=purity-based definition, 2=purity+efficiency >= 0.5 definition")
 parser.add_argument("--finderPurityThreshold", type=float, default=0.75,
                     help="Purity threshold used when FinderEfficiencyDefinition = 1")
@@ -54,16 +54,28 @@ if args.runFinder == 1 and not args.modelPath:
 if args.runValidation == 0 and args.doPerfectFit == 1:
     print("WARNING: --doPerfectFit is ignored when --runValidation 0")
 
+if args.runValidation == 1 and args.mode == 1 and args.doPerfectFit == 1:
+    print("WARNING: --doPerfectFit is ignored in finder-only validation mode")
+
 if args.runDigi == 0 and args.runFinder == 1:
     print("WARNING: --runFinder 1 with --runDigi 0 assumes digi collections are already present in the input file")
 
 if args.runFinder == 0 and args.runFitter == 1:
     print("WARNING: --runFitter 1 with --runFinder 0 assumes finder-track collections are already present in the input file")
 
-if args.runPerfectTracking == 0 and args.doPerfectFit == 1:
+if args.runPerfectTracking == 0 and args.doPerfectFit == 1 and args.runValidation == 1 and args.mode in [0, 2]:
     print("WARNING: --doPerfectFit 1 with --runPerfectTracking 0 assumes PerfectFittedTracks is already present in the input file")
 
-if all(flag == 0 for flag in [args.runDigi, args.runFinder, args.runFitter, args.runPerfectTracking, args.runValidation]):
+if args.runValidation == 1 and args.mode in [0, 1] and args.runFinder == 0:
+    print("WARNING: Validation mode requires FinderTracks, but --runFinder 0. "
+          "Assuming finder tracks are already present in the input file.")
+
+if args.runValidation == 1 and args.mode in [0, 2] and args.runFitter == 0:
+    print("WARNING: Validation mode requires FittedTracks, but --runFitter 0. "
+          "Assuming fitted tracks are already present in the input file.")
+
+if all(flag == 0 for flag in [args.runDigi, args.runFinder, args.runFitter,
+                              args.runPerfectTracking, args.runValidation]):
     parser.error("Nothing to do: all run flags are set to 0")
 
 # --------------------
@@ -79,6 +91,8 @@ PLANAR_LINK_COLLECTIONS = [
 ]
 
 DCH_LINK_COLLECTIONS = ["DCH_DigiSimAssociationCollection"] if args.useDCH == 1 else []
+
+HIT_SIM_LINK_COLLECTIONS = PLANAR_LINK_COLLECTIONS + DCH_LINK_COLLECTIONS
 
 PLANAR_DIGI_COLLECTIONS = [
     "VTXBDigis",
@@ -105,7 +119,7 @@ io.Output = args.outputFile
 # Geometry
 # --------------------
 geoservice = GeoSvc("GeoSvc")
-geoservice.detectors = [args.geom]
+geoservice.detectors = [args.compactFile]
 geoservice.EnableGeant4Geo = False
 geoservice.OutputLevel = INFO
 
@@ -253,15 +267,23 @@ if args.runFitter == 1:
 
     reco_fitter = GenfitTrackFitter("RecoTrackFitter")
     reco_fitter.InputTracks = [FINDER_TRACK_COLLECTION]
+
     reco_fitter.OutputFittedTracks = [FITTED_TRACK_COLLECTION]
+    reco_fitter.OutputFittedTracksWithFilteredHits = [FITTED_TRACK_COLLECTION + "_FilteredHits"]
+    reco_fitter.OutputFittedHits = ["FittedHits"]
+
     reco_fitter.RunSingleEvaluation = True
     reco_fitter.UseBrems = False
     reco_fitter.BetaInit = 100.0
     reco_fitter.BetaFinal = 0.1
-    reco_fitter.BetaSteps = 10
+    reco_fitter.BetaSteps = 15
     reco_fitter.InitializationType = 1
+
     reco_fitter.SkipTrackOrdering = False
-    reco_fitter.SkipUnmatchedTracks = False
+    reco_fitter.ListOfTypesToSkip = [0]
+    reco_fitter.FilterTrackHits = True
+    reco_fitter.RunCalorimeterExtrapolation = False
+
     reco_fitter.OutputLevel = INFO
 
     TopAlg += [reco_fitter]
@@ -281,15 +303,22 @@ if args.runPerfectTracking == 1:
 
     perfect_fitter = GenfitTrackFitter("PerfectTrackFitter")
     perfect_fitter.InputTracks = [PERFECT_TRACK_COLLECTION]
+
     perfect_fitter.OutputFittedTracks = [PERFECT_FITTED_TRACK_COLLECTION]
+    perfect_fitter.OutputFittedTracksWithFilteredHits = [PERFECT_FITTED_TRACK_COLLECTION + "_FilteredHits"]
+    perfect_fitter.OutputFittedHits = ["PerfectFittedHits"]
+
     perfect_fitter.RunSingleEvaluation = True
     perfect_fitter.UseBrems = False
     perfect_fitter.BetaInit = 100.0
     perfect_fitter.BetaFinal = 0.1
-    perfect_fitter.BetaSteps = 10
-    perfect_fitter.InitializationType = 1
+    perfect_fitter.BetaSteps = 15
+    perfect_fitter.InitializationType = 0
+
     perfect_fitter.SkipTrackOrdering = False
-    perfect_fitter.SkipUnmatchedTracks = False
+    perfect_fitter.ListOfTypesToSkip = [1]
+    perfect_fitter.FilterTrackHits = True
+
     perfect_fitter.OutputLevel = INFO
 
     TopAlg += [perfect, perfect_fitter]
@@ -304,22 +333,31 @@ if args.runValidation == 1:
     val.OutputFile = args.validationFile
     val.Mode = args.mode
 
-    # Fixed fitter/truth convention settings
     val.Bz = 2.0
     val.RefPointX = 0.0
     val.RefPointY = 0.0
     val.RefPointZ = 0.0
 
-    val.DoPerfectFit = bool(args.doPerfectFit)
+    val.DoPerfectFit = bool(args.doPerfectFit and args.mode in [0, 2])
     val.FinderEfficiencyDefinition = args.finderEfficiencyDefinition
     val.FinderPurityThreshold = args.finderPurityThreshold
 
     val.MCParticles = [MC_COLLECTION]
-    val.PlanarLinks = PLANAR_LINK_COLLECTIONS
-    val.DCHLinks = DCH_LINK_COLLECTIONS
-    val.FinderTracks = [FINDER_TRACK_COLLECTION]
-    val.FittedTracks = [FITTED_TRACK_COLLECTION]
-    val.PerfectFittedTracks = [PERFECT_FITTED_TRACK_COLLECTION] if args.doPerfectFit == 1 else []
+    val.HitSimLinks = HIT_SIM_LINK_COLLECTIONS
+
+    # Mode-dependent validation inputs.
+    # mode 0: full validation
+    # mode 1: finder-only validation
+    # mode 2: fitter-only validation
+    val.FinderTracks = [FINDER_TRACK_COLLECTION] if args.mode in [0, 1] else []
+    val.FittedTracks = [FITTED_TRACK_COLLECTION] if args.mode in [0, 2] else []
+
+    val.PerfectFittedTracks = (
+        [PERFECT_FITTED_TRACK_COLLECTION]
+        if args.doPerfectFit == 1 and args.mode in [0, 2]
+        else []
+    )
+
     val.OutputLevel = INFO
 
     TopAlg += [val]
@@ -331,6 +369,11 @@ ApplicationMgr(
     TopAlg=TopAlg,
     EvtSel="NONE",
     EvtMax=-1,
-    ExtSvc=[geoservice, EventDataSvc("EventDataSvc"), UniqueIDGenSvc("uidSvc"), RndmGenSvc()],
+    ExtSvc=[
+        geoservice,
+        EventDataSvc("EventDataSvc"),
+        UniqueIDGenSvc("uidSvc"),
+        RndmGenSvc(),
+    ],
     OutputLevel=INFO,
 )
