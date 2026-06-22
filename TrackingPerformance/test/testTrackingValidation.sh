@@ -143,7 +143,7 @@ echo "runFinder:                  1"
 echo "runFitter:                  1"
 echo "runPerfectTracking:         0"
 echo "runValidation:              1"
-echo "useDCH:                     1"
+echo "useDCH:                     0"
 echo "mode:                       0"
 echo "doPerfectFit:               0"
 echo "finderEfficiencyDefinition: 1"
@@ -196,7 +196,7 @@ k4run "${RUN_FILE}" \
   --runFitter 1 \
   --runPerfectTracking 0 \
   --runValidation 1 \
-  --useDCH 1 \
+  --useDCH 0 \
   --mode 0 \
   --doPerfectFit 0 \
   --finderEfficiencyDefinition 1 \
