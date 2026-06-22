@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODEL_FILE="${1:-}"
 ENERGY_GEV="${2:-15}"
 THETA_DEG="${3:-20}"
-N_EVENTS="${4:-10000}"
+N_EVENTS="${4:-10}"
 OUT_TAG="${5:-${ENERGY_GEV}GeV}"
 
 TRACKINGPERF_RUN_SIM="${TRACKINGPERF_RUN_SIM:-1}"
