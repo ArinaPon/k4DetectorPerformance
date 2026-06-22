@@ -190,7 +190,7 @@ k4run "${RUN_FILE}" \
   --modelPath "${MODEL_FILE}" \
   --outputFile "${RECO_FILE}" \
   --validationFile "${VAL_FILE}" \
-  --geom "${XML_FILE}" \
+  --compactFile "${XML_FILE}" \
   --runDigi 1 \
   --runFinder 1 \
   --runFitter 1 \
