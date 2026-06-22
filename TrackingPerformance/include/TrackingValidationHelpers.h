@@ -57,12 +57,8 @@ float wrapDeltaPhi(float a, float b);
  * charge sign, and magnetic field.
  */
 
-PCAInfoHelper PCAInfo_mm(float x, float y, float z,
-                         float px, float py, float pz,
-                         int chargeSign,
-                         float refX, float refY,
-                         float Bz);
-
+PCAInfoHelper PCAInfo_mm(float x, float y, float z, float px, float py, float pz, int chargeSign, float refX,
+                         float refY, float Bz);
 
 /**
  * @brief Build truth helix parameters in the same convention used by the fitter.
@@ -71,10 +67,8 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z,
  * using the same reference-point and helix convention adopted for fitted tracks,
  * so that residuals can be computed consistently.
  */
- 
-HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
-                                         float Bz,
-                                         float refX, float refY, float refZ);
+
+HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc, float Bz, float refX, float refY, float refZ);
 
 /// Retrieve the track state stored at the interaction point, if available
 std::optional<edm4hep::TrackState> getAtIPState(const edm4hep::Track& trk);
