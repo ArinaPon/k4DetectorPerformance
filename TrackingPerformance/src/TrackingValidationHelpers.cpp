@@ -30,22 +30,24 @@ static constexpr float a_genfit = 1e-15f * c_mm_s;
 
 float wrapDeltaPhi(float a, float b) {
   float d = a - b;
-  while (d >  M_PI) d -= 2.f * M_PI;
-  while (d < -M_PI) d += 2.f * M_PI;
+  while (d > M_PI)
+    d -= 2.f * M_PI;
+  while (d < -M_PI)
+    d += 2.f * M_PI;
   return d;
 }
 
-PCAInfoHelper PCAInfo_mm(float x, float y, float z,
-                         float px, float py, float pz,
-                         int chargeSign,
-                         float refX, float refY,
-                         float Bz) {
+PCAInfoHelper PCAInfo_mm(float x, float y, float z, float px, float py, float pz, int chargeSign, float refX,
+                         float refY, float Bz) {
   PCAInfoHelper out;
 
   const float pt = std::sqrt(px * px + py * py);
-  if (pt == 0.f) return out;
-  if (chargeSign == 0) chargeSign = 1;
-  if (Bz == 0.f) return out;
+  if (pt == 0.f)
+    return out;
+  if (chargeSign == 0)
+    chargeSign = 1;
+  if (Bz == 0.f)
+    return out;
 
   const float R = pt / (0.3f * std::abs(chargeSign) * Bz) * 1000.f;
 
@@ -61,7 +63,8 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z,
   const float vx = refX - xc;
   const float vy = refY - yc;
   const float vxy = std::sqrt(vx * vx + vy * vy);
-  if (vxy == 0.f) return out;
+  if (vxy == 0.f)
+    return out;
 
   const float ux = vx / vxy;
   const float uy = vy / vxy;
@@ -74,10 +77,11 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z,
 
   const int sign = (chargeSign > 0) ? 1 : -1;
   float tanX = -sign * ry;
-  float tanY =  sign * rx;
+  float tanY = sign * rx;
 
   const float tnorm = std::sqrt(tanX * tanX + tanY * tanY);
-  if (tnorm == 0.f) return out;
+  if (tnorm == 0.f)
+    return out;
 
   tanX /= tnorm;
   tanY /= tnorm;
@@ -90,7 +94,8 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z,
   const float Z0 = z;
 
   const float denom = (pR * pR + pZ * pZ);
-  if (denom == 0.f) return out;
+  if (denom == 0.f)
+    return out;
 
   const float tPCA = -(R0 * pR + Z0 * pZ) / denom;
   const float ZPCA = Z0 + pZ * tPCA;
@@ -103,9 +108,7 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z,
   return out;
 }
 
-HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
-                                         float Bz,
-                                         float refX, float refY, float refZ) {
+HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc, float Bz, float refX, float refY, float refZ) {
   HelixParams hp;
 
   const auto& mom = mc.getMomentum();
@@ -114,13 +117,14 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
   const float pz = float(mom.z);
 
   const float pT = std::sqrt(px * px + py * py);
-  const float p  = std::sqrt(px * px + py * py + pz * pz);
+  const float p = std::sqrt(px * px + py * py + pz * pz);
 
   hp.pT = pT;
-  hp.p  = p;
+  hp.p = p;
 
   int qSign = 1;
-  if (mc.getCharge() < 0.f) qSign = -1;
+  if (mc.getCharge() < 0.f)
+    qSign = -1;
 
   const auto& v = mc.getVertex();
   const float x = float(v.x);
@@ -138,8 +142,7 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc,
     return hp;
   }
 
-  hp.D0 = ((-(refX - info.pcaX)) * std::sin(info.phi0) +
-           (refY - info.pcaY) * std::cos(info.phi0));
+  hp.D0 = ((-(refX - info.pcaX)) * std::sin(info.phi0) + (refY - info.pcaY) * std::cos(info.phi0));
   hp.Z0 = (info.pcaZ - refZ);
   hp.phi = std::atan2(py, px);
   hp.tanLambda = (pT > 0.f) ? (pz / pT) : 0.f;
@@ -159,7 +162,8 @@ std::optional<edm4hep::TrackState> getAtIPState(const edm4hep::Track& trk) {
 
 float ptFromState(const edm4hep::TrackState& st, float Bz) {
   const float omega = std::abs(float(st.omega));
-  if (omega == 0.f) return 0.f;
+  if (omega == 0.f)
+    return 0.f;
   return a_genfit * std::abs(Bz) / omega;
 }
 

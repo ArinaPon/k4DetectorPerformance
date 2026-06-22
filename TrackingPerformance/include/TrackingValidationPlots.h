@@ -30,25 +30,23 @@
 
 namespace TrackingValidationPlots {
 
-/// Build logarithmic momentum bins    
+/// Build logarithmic momentum bins
 std::vector<double> makeLogBins(double min, double max, double step);
 
 /// Result of the effective-sigma extraction
 struct EffectiveSigmaResult {
-    double center = 0.0;    // center of the narrowest interval
-    double sigmaEff = 0.0;  // half-width of the narrowest interval
-    double median = 0.0;    // optional diagnostic info
-    bool valid = false;
-    std::size_t nEntries = 0;
+  double center = 0.0;   // center of the narrowest interval
+  double sigmaEff = 0.0; // half-width of the narrowest interval
+  double median = 0.0;   // optional diagnostic info
+  bool valid = false;
+  std::size_t nEntries = 0;
 };
 
 /// Compute sigma_eff as half-width of the narrowest interval containing "fraction"of entries
 EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fraction = 0.6827);
 
-double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
-                                           double fraction = 0.6827,
-                                           int nBootstrap = 200,
-                                           unsigned int seed = 12345u);
+double computeEffectiveSigmaBootstrapError(const std::vector<double>& values, double fraction = 0.6827,
+                                           int nBootstrap = 200, unsigned int seed = 12345u);
 
 /**
  * @brief Build the d0 resolution as a function of momentum.
@@ -58,16 +56,11 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
  result as a TGraphErrors.
  */
 
-TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
-                                         const char* graphName = "g_d0_resolution_vs_p",
-                                         double pMin = 0.1,
-                                         double pMax = 100.0,
-                                         double logStep = 0.15);
+TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName = "g_d0_resolution_vs_p", double pMin = 0.1,
+                                         double pMax = 100.0, double logStep = 0.15);
 
-/// Draw the d0 resolution graph on a logarithmic momentum axis                                         
-TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
-                                const char* canvasName = "c_d0_resolution_vs_p",
-                                double xMin = 0.1,
+/// Draw the d0 resolution graph on a logarithmic momentum axis
+TCanvas* drawD0ResolutionCanvas(TGraphErrors* g, const char* canvasName = "c_d0_resolution_vs_p", double xMin = 0.1,
                                 double xMax = 100.0);
 
 /**
@@ -76,12 +69,9 @@ TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
  * The function reads the fitter validation tree, collects relative momentum
  * residual values in momentum bins, extracts the effective sigma in each bin,
  and returns the result as a TGraphErrors.
- */                                
-TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
-                                               const char* graphName = "g_p_resolution_vs_p",
-                                               double pMin = 0.1,
-                                               double pMax = 100.0,
-                                               double logStep = 0.15);
+ */
+TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphName = "g_p_resolution_vs_p",
+                                               double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
 
 /**
  * @brief Build the transverse-momentum resolution as a function of momentum.
@@ -89,18 +79,12 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
  * The function reads the fitter validation tree, collects relative transverse-
  * momentum residual values in momentum bins, extracts the effective sigma in
  each bin, and returns the result as a TGraphErrors.
- */                                               
-TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
-                                         const char* graphName = "g_pt_resolution_vs_p",
-                                         double pMin = 0.1,
-                                         double pMax = 100.0,
-                                         double logStep = 0.15);
+ */
+TGraphErrors* makePtResolutionVsMomentum(TTree* tree, const char* graphName = "g_pt_resolution_vs_p", double pMin = 0.1,
+                                         double pMax = 100.0, double logStep = 0.15);
 
 /// Draw a generic resolution graph on a logarithmic momentum axis
-TCanvas* drawResolutionCanvas(TGraphErrors* g,
-                              const char* canvasName,
-                              const char* title,
-                              double xMin = 0.1,
+TCanvas* drawResolutionCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin = 0.1,
                               double xMax = 100.0);
 
 /**
@@ -109,20 +93,13 @@ TCanvas* drawResolutionCanvas(TGraphErrors* g,
  * The function reads the finder validation tree and computes the efficiency
  * according to the selected matching definition, returning the result as a
  * TGraphErrors.
- */                              
-TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
-                                       const char* graphName,
-                                       int efficiencyDefinition,
-                                       double purityThreshold,
-                                       double pMin = 0.1,
-                                       double pMax = 100.0,
+ */
+TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree, const char* graphName, int efficiencyDefinition,
+                                       double purityThreshold, double pMin = 0.1, double pMax = 100.0,
                                        double logStep = 0.15);
 
-/// Draw the tracking-efficiency graph on a logarithmic momentum axis                                       
-TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
-                              const char* canvasName,
-                              const char* title,
-                              double xMin = 0.1,
+/// Draw the tracking-efficiency graph on a logarithmic momentum axis
+TCanvas* drawEfficiencyCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin = 0.1,
                               double xMax = 100.0);
 
 } // namespace TrackingValidationPlots

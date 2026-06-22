@@ -1,39 +1,59 @@
+/*
+ * Copyright (c) 2020-2024 Key4hep-Project.
+ *
+ * This file is part of Key4hep.
+ * See https://key4hep.github.io/key4hep-doc/ for further info.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #include "TrackingValidationPlots.h"
-#include "TStyle.h"
 #include "TAxis.h"
+#include "TStyle.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <vector>
 #include <numeric>
 #include <random>
+#include <vector>
 
 // makeLogBins
-//interpolateQuantile
-//makeD0ResolutionVsMomentum
-//drawD0ResolutionCanvas
-//makeMomentumResolutionVsMomentum
-//makePtResolutionVsMomentum
-//drawResolutionCanvas
-//makeEfficiencyVsMomentum
-//drawEfficiencyCanvas
+// interpolateQuantile
+// makeD0ResolutionVsMomentum
+// drawD0ResolutionCanvas
+// makeMomentumResolutionVsMomentum
+// makePtResolutionVsMomentum
+// drawResolutionCanvas
+// makeEfficiencyVsMomentum
+// drawEfficiencyCanvas
 
 namespace TrackingValidationPlots {
 
 namespace {
-double interpolateQuantile(const std::vector<double>& x, double q) {
-  if (x.empty()) return std::numeric_limits<double>::quiet_NaN();
-  if (x.size() == 1) return x[0];
+  double interpolateQuantile(const std::vector<double>& x, double q) {
+    if (x.empty())
+      return std::numeric_limits<double>::quiet_NaN();
+    if (x.size() == 1)
+      return x[0];
 
-  const double pos = q * (x.size() - 1);
-  const std::size_t i = static_cast<std::size_t>(std::floor(pos));
-  const double frac = pos - static_cast<double>(i);
+    const double pos = q * (x.size() - 1);
+    const std::size_t i = static_cast<std::size_t>(std::floor(pos));
+    const double frac = pos - static_cast<double>(i);
 
-  if (i +1 < x.size()) {
-    return x[i] * (1.0 - frac) + x[i +1] * frac;
+    if (i + 1 < x.size()) {
+      return x[i] * (1.0 - frac) + x[i + 1] * frac;
+    }
+    return x[i];
   }
-  return x[i];
-}
 } // namespace
 
 std::vector<double> makeLogBins(double min, double max, double step) {
@@ -41,16 +61,19 @@ std::vector<double> makeLogBins(double min, double max, double step) {
   for (double x = std::log10(min); x <= std::log10(max); x += step) {
     bins.push_back(std::pow(10., x));
   }
-  if (bins.empty() || bins.back() < max) bins.push_back(max);
+  if (bins.empty() || bins.back() < max)
+    bins.push_back(max);
   return bins;
 }
 
-EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fraction){
+EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fraction) {
   EffectiveSigmaResult out;
   out.nEntries = values.size();
 
-  if (values.size() < 2) return out;
-  if (!(fraction > 0.0 && fraction <= 1.0)) return out;
+  if (values.size() < 2)
+    return out;
+  if (!(fraction > 0.0 && fraction <= 1.0))
+    return out;
 
   std::sort(values.begin(), values.end());
   out.median = interpolateQuantile(values, 0.5);
@@ -83,13 +106,13 @@ EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fr
   return out;
 }
 
-double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
-                                           double fraction,
-                                           int nBootstrap,
+double computeEffectiveSigmaBootstrapError(const std::vector<double>& values, double fraction, int nBootstrap,
                                            unsigned int seed) {
-  if (values.size() < 5) return 0.0;
-  if (nBootstrap < 2) return 0.0;
-  
+  if (values.size() < 5)
+    return 0.0;
+  if (nBootstrap < 2)
+    return 0.0;
+
   std::mt19937 rng(seed);
   std::uniform_int_distribution<std::size_t> pick(0, values.size() - 1);
 
@@ -109,7 +132,8 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
     }
   }
 
-  if (boot.size() < 2) return 0.0;
+  if (boot.size() < 2)
+    return 0.0;
 
   const double mean = std::accumulate(boot.begin(), boot.end(), 0.0) / static_cast<double>(boot.size());
 
@@ -121,14 +145,11 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values,
   var /= static_cast<double>(boot.size() - 1);
 
   return std::sqrt(var);
-                                           }
+}
 
-TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
-                                         const char* graphName,
-                                         double pMin,
-                                         double pMax,
-                                         double logStep) {
-  if (!tree) return nullptr;
+TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
+  if (!tree)
+    return nullptr;
 
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
@@ -145,15 +166,19 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
   for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
     tree->GetEntry(ievt);
 
-    if (!p_ref_vec || !resD0) continue;
-    if (p_ref_vec->size() != resD0->size()) continue;
+    if (!p_ref_vec || !resD0)
+      continue;
+    if (p_ref_vec->size() != resD0->size())
+      continue;
 
     for (size_t i = 0; i < p_ref_vec->size(); ++i) {
       const double p = (*p_ref_vec)[i];
       const double d0_um = (*resD0)[i] * 1000.0;
 
-      if (!std::isfinite(p) || !std::isfinite(d0_um)) continue;
-      if (p < pMin || p >= pMax) continue;
+      if (!std::isfinite(p) || !std::isfinite(d0_um))
+        continue;
+      if (p < pMin || p >= pMax)
+        continue;
 
       int bin = -1;
       for (int b = 0; b < nBins; ++b) {
@@ -162,7 +187,8 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
           break;
         }
       }
-      if (bin < 0) continue;
+      if (bin < 0)
+        continue;
 
       residualsPerBin[bin].push_back(d0_um);
     }
@@ -174,13 +200,15 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (residualsPerBin[b].size() < 20) continue;
+    if (residualsPerBin[b].size() < 20)
+      continue;
 
     const auto eff = computeEffectiveSigma(residualsPerBin[b]);
-    if (!eff.valid) continue;
-    
+    if (!eff.valid)
+      continue;
+
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-    const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 12345u +b);
+    const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 12345u + b);
 
     g->SetPoint(ip, pCenter, eff.sigmaEff);
     g->SetPointError(ip, 0.0, sigmaErr);
@@ -190,11 +218,9 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree,
   return g;
 }
 
-TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
-                                const char* canvasName,
-                                double xMin,
-                                double xMax) {
-  if (!g) return nullptr;
+TCanvas* drawD0ResolutionCanvas(TGraphErrors* g, const char* canvasName, double xMin, double xMax) {
+  if (!g)
+    return nullptr;
 
   gStyle->SetOptStat(0);
 
@@ -209,12 +235,10 @@ TCanvas* drawD0ResolutionCanvas(TGraphErrors* g,
   return c;
 }
 
-TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
-                                               const char* graphName,
-                                               double pMin,
-                                               double pMax,
+TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
                                                double logStep) {
-  if (!tree) return nullptr;
+  if (!tree)
+    return nullptr;
 
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
@@ -231,16 +255,21 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
   for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
     tree->GetEntry(ievt);
 
-    if (!p_ref_vec || !p_reco_vec) continue;
-    if (p_ref_vec->size() != p_reco_vec->size()) continue;
+    if (!p_ref_vec || !p_reco_vec)
+      continue;
+    if (p_ref_vec->size() != p_reco_vec->size())
+      continue;
 
     for (size_t i = 0; i < p_ref_vec->size(); ++i) {
       const double pRef = (*p_ref_vec)[i];
       const double pReco = (*p_reco_vec)[i];
 
-      if (!std::isfinite(pRef) || !std::isfinite(pReco)) continue;
-      if (pRef <= 0.) continue;
-      if (pRef < pMin || pRef >= pMax) continue;
+      if (!std::isfinite(pRef) || !std::isfinite(pReco))
+        continue;
+      if (pRef <= 0.)
+        continue;
+      if (pRef < pMin || pRef >= pMax)
+        continue;
 
       const double res = (pReco - pRef) / pRef;
 
@@ -251,7 +280,8 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
           break;
         }
       }
-      if (bin < 0) continue;
+      if (bin < 0)
+        continue;
 
       residualsPerBin[bin].push_back(res);
     }
@@ -263,12 +293,12 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (residualsPerBin[b].size() < 20) continue;
-
-    
+    if (residualsPerBin[b].size() < 20)
+      continue;
 
     const auto eff = computeEffectiveSigma(residualsPerBin[b]);
-    if (!eff.valid) continue;
+    if (!eff.valid)
+      continue;
 
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
     const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 22345u + b);
@@ -281,12 +311,9 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree,
   return g;
 }
 
-TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
-                                         const char* graphName,
-                                         double pMin,
-                                         double pMax,
-                                         double logStep) {
-  if (!tree) return nullptr;
+TGraphErrors* makePtResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
+  if (!tree)
+    return nullptr;
 
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
@@ -305,18 +332,24 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
   for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
     tree->GetEntry(ievt);
 
-    if (!p_ref_vec || !pt_ref_vec || !pt_reco_vec) continue;
-    if (p_ref_vec->size() != pt_ref_vec->size()) continue;
-    if (pt_ref_vec->size() != pt_reco_vec->size()) continue;
+    if (!p_ref_vec || !pt_ref_vec || !pt_reco_vec)
+      continue;
+    if (p_ref_vec->size() != pt_ref_vec->size())
+      continue;
+    if (pt_ref_vec->size() != pt_reco_vec->size())
+      continue;
 
     for (size_t i = 0; i < p_ref_vec->size(); ++i) {
       const double pRef = (*p_ref_vec)[i];
       const double ptRef = (*pt_ref_vec)[i];
       const double ptReco = (*pt_reco_vec)[i];
 
-      if (!std::isfinite(pRef) || !std::isfinite(ptRef) || !std::isfinite(ptReco)) continue;
-      if (ptRef <= 0.) continue;
-      if (pRef < pMin || pRef >= pMax) continue;
+      if (!std::isfinite(pRef) || !std::isfinite(ptRef) || !std::isfinite(ptReco))
+        continue;
+      if (ptRef <= 0.)
+        continue;
+      if (pRef < pMin || pRef >= pMax)
+        continue;
 
       const double res = (ptReco - ptRef) / ptRef;
 
@@ -327,7 +360,8 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
           break;
         }
       }
-      if (bin < 0) continue;
+      if (bin < 0)
+        continue;
 
       residualsPerBin[bin].push_back(res);
     }
@@ -339,14 +373,15 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (residualsPerBin[b].size() < 20) continue;
+    if (residualsPerBin[b].size() < 20)
+      continue;
 
     const auto eff = computeEffectiveSigma(residualsPerBin[b]);
-    if (!eff.valid) continue;
+    if (!eff.valid)
+      continue;
 
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
     const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 32345u + b);
-
 
     g->SetPoint(ip, pCenter, eff.sigmaEff);
     g->SetPointError(ip, 0.0, sigmaErr);
@@ -356,12 +391,9 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree,
   return g;
 }
 
-TCanvas* drawResolutionCanvas(TGraphErrors* g,
-                              const char* canvasName,
-                              const char* title,
-                              double xMin,
-                              double xMax) {
-  if (!g) return nullptr;
+TCanvas* drawResolutionCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin, double xMax) {
+  if (!g)
+    return nullptr;
 
   gStyle->SetOptStat(0);
 
@@ -377,14 +409,10 @@ TCanvas* drawResolutionCanvas(TGraphErrors* g,
   return c;
 }
 
-TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
-                                       const char* graphName,
-                                       int efficiencyDefinition,
-                                       double purityThreshold,
-                                       double pMin,
-                                       double pMax,
-                                       double logStep) {
-  if (!finderTree) return nullptr;
+TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree, const char* graphName, int efficiencyDefinition,
+                                       double purityThreshold, double pMin, double pMax, double logStep) {
+  if (!finderTree)
+    return nullptr;
 
   std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
   const int nBins = bins.size() - 1;
@@ -404,13 +432,17 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
   for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
     finderTree->GetEntry(ievt);
 
-    if (!pVec || !purVec || !effVec) continue;
-    if (pVec->size() != purVec->size()) continue;
-    if (pVec->size() != effVec->size()) continue;
+    if (!pVec || !purVec || !effVec)
+      continue;
+    if (pVec->size() != purVec->size())
+      continue;
+    if (pVec->size() != effVec->size())
+      continue;
 
     for (size_t i = 0; i < pVec->size(); ++i) {
       const double p = (*pVec)[i];
-      if (!std::isfinite(p) || p < pMin || p >= pMax) continue;
+      if (!std::isfinite(p) || p < pMin || p >= pMax)
+        continue;
 
       int bin = -1;
       for (int b = 0; b < nBins; ++b) {
@@ -419,7 +451,8 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
           break;
         }
       }
-      if (bin < 0) continue;
+      if (bin < 0)
+        continue;
 
       nDen[bin]++;
 
@@ -446,7 +479,8 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
         }
       }
 
-      if (isMatched) nNum[bin]++;
+      if (isMatched)
+        nNum[bin]++;
     }
   }
 
@@ -456,7 +490,8 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
-    if (nDen[b] == 0) continue;
+    if (nDen[b] == 0)
+      continue;
 
     const double eff = double(nNum[b]) / double(nDen[b]);
     const double err = std::sqrt(eff * (1.0 - eff) / double(nDen[b]));
@@ -470,12 +505,9 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree,
   return g;
 }
 
-TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
-                              const char* canvasName,
-                              const char* title,
-                              double xMin,
-                              double xMax) {
-  if (!g) return nullptr;
+TCanvas* drawEfficiencyCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin, double xMax) {
+  if (!g)
+    return nullptr;
 
   gStyle->SetOptStat(0);
 
@@ -491,4 +523,4 @@ TCanvas* drawEfficiencyCanvas(TGraphErrors* g,
 
   return c;
 }
-}
+} // namespace TrackingValidationPlots

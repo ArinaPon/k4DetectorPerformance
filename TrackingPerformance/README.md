@@ -1,3 +1,21 @@
+<!--
+Copyright (c) 2020-2024 Key4hep-Project.
+
+This file is part of Key4hep.
+See https://key4hep.github.io/key4hep-doc/ for further info.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 # TrackingValidation
 
 ## Overview
@@ -20,28 +38,28 @@ Typical use cases include:
 
 `TrackingValidation` consumes the following input collections:
 
-- **MC particle collection**  
-  Type: `edm4hep::MCParticleCollection`  
+- **MC particle collection**
+  Type: `edm4hep::MCParticleCollection`
   Used as the truth reference for particle-level validation.
 
-- **Planar digi-to-sim link collections**  
-  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`  
+- **Planar digi-to-sim link collections**
+  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`
   Used to connect reconstructed planar hits to the originating simulated particles.
 
-- **Drift-chamber digi-to-sim link collections**  
-  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`  
+- **Drift-chamber digi-to-sim link collections**
+  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`
   Used to connect reconstructed drift-chamber hits to the originating simulated particles.
 
-- **Finder track collection**  
-  Type: `edm4hep::TrackCollection`  
+- **Finder track collection**
+  Type: `edm4hep::TrackCollection`
   Collection of tracks produced by the track-finding stage.
 
-- **Fitted track collection**  
-  Type: `edm4hep::TrackCollection`  
+- **Fitted track collection**
+  Type: `edm4hep::TrackCollection`
   Collection of tracks produced by the standard fitting stage.
 
-- **Perfect fitted-track collections (optional)**  
-  Type: `std::vector<const edm4hep::TrackCollection*>`  
+- **Perfect fitted-track collections (optional)**
+  Type: `std::vector<const edm4hep::TrackCollection*>`
   Optional reference collections produced from perfect truth-based associations, used when perfect-fit validation is enabled.
 
 ---
@@ -56,16 +74,16 @@ The file contains validation TTrees for finder-level and fitter-level studies, t
 
 The exact content filled in the output depends on the validation mode selected through `Mode`:
 
-- **`Mode = 0` (full-pipeline mode)**  
-  Both finder-level and fitter-level validation are performed.  
+- **`Mode = 0` (full-pipeline mode)**
+  Both finder-level and fitter-level validation are performed.
   The output includes the association trees and the fitter residual trees.
 
-- **`Mode = 1` (finder-only mode)**  
-  Only the finder-level validation is performed.  
+- **`Mode = 1` (finder-only mode)**
+  Only the finder-level validation is performed.
   The finder and perfect-association trees are filled, while the fitter trees are booked in the file but are not filled.
 
-- **`Mode = 2` (fitter-only mode)**  
-  Only the fitter-level validation is performed.  
+- **`Mode = 2` (fitter-only mode)**
+  Only the fitter-level validation is performed.
   The fitter trees are filled, while the finder and perfect-association trees are booked in the file but are not filled.
 
 ### Effect of `DoPerfectFit`
@@ -83,7 +101,7 @@ In `finalize()`, the algorithm also writes summary plots to the same ROOT file, 
 - tracking efficiency vs momentum,
 - `d0` resolution vs momentum,
 - momentum resolution vs momentum,
-- transverse-momentum resolution vs momentum.  
+- transverse-momentum resolution vs momentum.
 
 ---
 
@@ -98,14 +116,14 @@ For each particle-track pair, the algorithm stores two standard hit-based quanti
 
 The summary **tracking efficiency** can then be defined in more than one way.
 
-- **`FinderEfficiencyDefinition = 1`**  
-  A truth particle is counted as reconstructed if it is associated to at least one finder track with  
-  `purity >= FinderPurityThreshold`.  
+- **`FinderEfficiencyDefinition = 1`**
+  A truth particle is counted as reconstructed if it is associated to at least one finder track with
+  `purity >= FinderPurityThreshold`.
   In the default configuration, `FinderPurityThreshold = 0.75`, following the CMS association convention in which a reconstructed track is associated to a simulated particle if more than 75% of its hits originate from that particle. The tracking efficiency is then defined as the fraction of simulated tracks associated to at least one reconstructed track. :contentReference[oaicite:0]{index=0}
 
-- **`FinderEfficiencyDefinition = 2`**  
-  A truth particle is counted as reconstructed if it is associated to at least one finder track with  
-  `purity >= 0.5` **and** `efficiency >= 0.5`.  
+- **`FinderEfficiencyDefinition = 2`**
+  A truth particle is counted as reconstructed if it is associated to at least one finder track with
+  `purity >= 0.5` **and** `efficiency >= 0.5`.
   This corresponds to the stricter two-ratio variant, where both the purity of the reconstructed track and the fraction of recovered truth hits must exceed 50%.
 
 In the current implementation, the denominator of the efficiency plot includes generator-level particles with status 1 and at least one truth-linked hit.
@@ -142,37 +160,37 @@ k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
 
 The current test runs the full reconstruction and validation chain with the following settings:
 
-- `TRACKINGPERF_RUN_SIM = 1`  
+- `TRACKINGPERF_RUN_SIM = 1`
   simulation step in the shell test (`0` = skip simulation and use an existing EDM4hep input file via `TRACKINGPERF_INPUT_FILE_OVERRIDE`, `1` = run simulation with `ddsim`);
-  
-- `runDigi = 1`  
+
+- `runDigi = 1`
   digitization step (`0` = skip digitization, `1` = run digitization);
 
-- `runFinder = 1`  
+- `runFinder = 1`
   track-finder step (`0` = skip track finder, `1` = run track finder);
 
-- `runFitter = 1`  
+- `runFitter = 1`
   reconstructed-track fitter (`0` = skip reco fitter, `1` = run reco fitter);
 
-- `runPerfectTracking = 1`  
+- `runPerfectTracking = 1`
   perfect-tracking and perfect-fitter chain (`0` = skip perfect tracking/perfect fitter, `1` = run them);
 
-- `runValidation = 1`  
+- `runValidation = 1`
   validation step (`0` = skip validation, `1` = run validation);
 
-- `useDCH = 1`  
+- `useDCH = 1`
   drift-chamber collections (`0` = disable DCH, `1` = use DCH);
 
-- `mode = 0`  
+- `mode = 0`
   validation mode (`0` = full validation, `1` = finder-only validation, `2` = fitter-only validation);
 
-- `doPerfectFit = 1`  
+- `doPerfectFit = 1`
   fitter-versus-perfect comparison (`0` = disable fitter-vs-perfect filling, `1` = enable it);
 
-- `finderEfficiencyDefinition = 1`  
+- `finderEfficiencyDefinition = 1`
   tracking-efficiency definition (`1` = purity-based definition, `2` = purity >= 0.5 and efficiency >= 0.5);
 
-- `finderPurityThreshold = 0.75`  
+- `finderPurityThreshold = 0.75`
   purity threshold used when `FinderEfficiencyDefinition = 1`.
 
 These command-line flags are defined in `runTrackingValidation.py`, which allows the same steering file to be used either for the full chain or for reduced workflows in which some reconstruction steps are skipped and only the validation is run.
