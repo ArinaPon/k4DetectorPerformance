@@ -90,7 +90,7 @@ PLANAR_LINK_COLLECTIONS = [
     "VTXDSimDigiLinks",
 ]
 
-DCH_LINK_COLLECTIONS = ["DCH_DigiSimAssociationCollection"] if args.useDCH == 1 else []
+DCH_LINK_COLLECTIONS = ["DCHDigiSimAssociationCollection"] if args.useDCH == 1 else []
 
 HIT_SIM_LINK_COLLECTIONS = PLANAR_LINK_COLLECTIONS + DCH_LINK_COLLECTIONS
 
@@ -101,10 +101,10 @@ PLANAR_DIGI_COLLECTIONS = [
     "SiWrDDigis",
 ]
 
-DCH_DIGI_COLLECTIONS = ["DCH_DigiCollection"] if args.useDCH == 1 else []
+DCH_DIGI_COLLECTIONS = ["DCHDigis"] if args.useDCH == 1 else []
 
 FINDER_TRACK_COLLECTION = "GGTFTracks"
-FITTED_TRACK_COLLECTION = "FittedTracks"
+FITTED_TRACK_COLLECTION = "Fitted_tracks_with_filtered_hits"
 PERFECT_TRACK_COLLECTION = "PerfectTracks"
 PERFECT_FITTED_TRACK_COLLECTION = "PerfectFittedTracks"
 
@@ -268,8 +268,8 @@ if args.runFitter == 1:
     reco_fitter = GenfitTrackFitter("RecoTrackFitter")
     reco_fitter.InputTracks = [FINDER_TRACK_COLLECTION]
 
-    reco_fitter.OutputFittedTracks = [FITTED_TRACK_COLLECTION]
-    reco_fitter.OutputFittedTracksWithFilteredHits = [FITTED_TRACK_COLLECTION + "_FilteredHits"]
+    #reco_fitter.OutputFittedTracks = [FITTED_TRACK_COLLECTION]
+    reco_fitter.OutputFittedTracksWithFilteredHits = ["Fitted_tracks_with_filtered_hits"]
     reco_fitter.OutputFittedHits = ["FittedHits"]
 
     reco_fitter.RunSingleEvaluation = True
