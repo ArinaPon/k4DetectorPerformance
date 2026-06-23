@@ -18,11 +18,21 @@
 #
 import os
 import math
+import argparse
 
 from Gaudi.Configuration import INFO
 from Configurables import EventDataSvc, GeoSvc, UniqueIDGenSvc, RndmGenSvc
 from k4FWCore import IOSvc, ApplicationMgr
 from k4FWCore.parseArgs import parser
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    if v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    raise argparse.ArgumentTypeError("Boolean value expected")
 
 # --------------------
 # Arguments
@@ -30,7 +40,7 @@ from k4FWCore.parseArgs import parser
 parser.add_argument("--inputFile", required=True,
                     help="Input EDM4hep ROOT file")
 parser.add_argument("--modelPath", default="",
-                    help="Path to the GGTF ONNX model, required only if --runFinder 1")
+                    help="Path to the GGTF ONNX model, required only if --runFinder true")
 parser.add_argument("--outputFile", default="out_reco.root",
                     help="Output EDM4hep ROOT file with reconstructed collections")
 parser.add_argument("--validationFile", default="validation.root",
@@ -41,24 +51,24 @@ parser.add_argument("--compactFile",
                     help="Detector geometry XML file")
 
 # Pipeline control
-parser.add_argument("--runDigi", type=int, default=1, choices=[0, 1],
-                    help="0=skip digitization, 1=run digitization")
-parser.add_argument("--runFinder", type=int, default=1, choices=[0, 1],
-                    help="0=skip track finder, 1=run track finder")
-parser.add_argument("--runFitter", type=int, default=1, choices=[0, 1],
-                    help="0=skip reco fitter, 1=run reco fitter")
-parser.add_argument("--runPerfectTracking", type=int, default=1, choices=[0, 1],
-                    help="0=skip perfect tracking/perfect fitter, 1=run them")
-parser.add_argument("--runValidation", type=int, default=1, choices=[0, 1],
-                    help="0=skip validation, 1=run TrackingValidation")
-parser.add_argument("--useDCH", type=int, default=1, choices=[0, 1],
-                    help="0=disable DCH collections, 1=use DCH collections")
+parser.add_argument("--runDigi", type=str2bool, default=True,
+                    help="Run digitization")
+parser.add_argument("--runFinder", type=str2bool, default=True,
+                    help="Run track finder")
+parser.add_argument("--runFitter", type=str2bool, default=True,
+                    help="Run reco fitter")
+parser.add_argument("--runPerfectTracking", type=str2bool, default=True,
+                    help="Run perfect tracking/perfect fitter")
+parser.add_argument("--runValidation", type=str2bool, default=True,
+                    help="Run TrackingValidation")
+parser.add_argument("--useDCH", type=str2bool, default=True,
+                    help="Use DCH collections")
 
 # Validation control
 parser.add_argument("--mode", type=int, default=0, choices=[0, 1, 2],
                     help="Validation mode: 0=Full, 1=FinderOnly, 2=FitterOnly")
-parser.add_argument("--doPerfectFit", type=int, default=1, choices=[0, 1],
-                    help="0=do not fill fitter_vs_perfect, 1=fill fitter_vs_perfect")
+parser.add_argument("--doPerfectFit", type=str2bool, default=True,
+                    help="Fill fitter_vs_perfect")
 parser.add_argument("--finderEfficiencyDefinition", type=int, default=1, choices=[1, 2],
                     help="1=purity-based definition, 2=purity+efficiency >= 0.5 definition")
 parser.add_argument("--finderPurityThreshold", type=float, default=0.75,
@@ -66,35 +76,35 @@ parser.add_argument("--finderPurityThreshold", type=float, default=0.75,
 
 args = parser.parse_args()
 
-if args.runFinder == 1 and not args.modelPath:
-    parser.error("--modelPath is required when --runFinder 1")
+if args.runFinder and not args.modelPath:
+    parser.error("--modelPath is required when --runFinder true")
 
-if args.runValidation == 0 and args.doPerfectFit == 1:
-    print("WARNING: --doPerfectFit is ignored when --runValidation 0")
+if not args.runValidation and args.doPerfectFit:
+    print("WARNING: --doPerfectFit is ignored when --runValidation false")
 
-if args.runValidation == 1 and args.mode == 1 and args.doPerfectFit == 1:
+if args.runValidation and args.mode and args.doPerfectFit:
     print("WARNING: --doPerfectFit is ignored in finder-only validation mode")
 
-if args.runDigi == 0 and args.runFinder == 1:
-    print("WARNING: --runFinder 1 with --runDigi 0 assumes digi collections are already present in the input file")
+if not args.runDigi and args.runFinder:
+    print("WARNING: --runFinder true with --runDigi false assumes digi collections are already present in the input file")
 
-if args.runFinder == 0 and args.runFitter == 1:
-    print("WARNING: --runFitter 1 with --runFinder 0 assumes finder-track collections are already present in the input file")
+if not args.runFinder and args.runFitter:
+    print("WARNING: --runFitter true with --runFinder false assumes finder-track collections are already present in the input file")
 
-if args.runPerfectTracking == 0 and args.doPerfectFit == 1 and args.runValidation == 1 and args.mode in [0, 2]:
-    print("WARNING: --doPerfectFit 1 with --runPerfectTracking 0 assumes PerfectFittedTracks is already present in the input file")
+if not args.runPerfectTracking and args.doPerfectFit and args.runValidation and args.mode in [0, 2]:
+    print("WARNING: --doPerfectFit true with --runPerfectTracking false assumes PerfectFittedTracks is already present in the input file")
 
-if args.runValidation == 1 and args.mode in [0, 1] and args.runFinder == 0:
-    print("WARNING: Validation mode requires FinderTracks, but --runFinder 0. "
+if args.runValidation and args.mode in [0, 1] and not args.runFinder:
+    print("WARNING: Validation mode requires FinderTracks, but --runFinder false. "
           "Assuming finder tracks are already present in the input file.")
 
-if args.runValidation == 1 and args.mode in [0, 2] and args.runFitter == 0:
-    print("WARNING: Validation mode requires FittedTracks, but --runFitter 0. "
+if args.runValidation and args.mode in [0, 2] and not args.runFitter:
+    print("WARNING: Validation mode requires FittedTracks, but --runFitter false. "
           "Assuming fitted tracks are already present in the input file.")
 
-if all(flag == 0 for flag in [args.runDigi, args.runFinder, args.runFitter,
-                              args.runPerfectTracking, args.runValidation]):
-    parser.error("Nothing to do: all run flags are set to 0")
+if not any([args.runDigi, args.runFinder, args.runFitter,
+            args.runPerfectTracking, args.runValidation]):
+    parser.error("Nothing to do: all run flags are false")
 
 # --------------------
 # Fixed collection names
@@ -108,7 +118,7 @@ PLANAR_LINK_COLLECTIONS = [
     "VTXDSimDigiLinks",
 ]
 
-DCH_LINK_COLLECTIONS = ["DCHDigiSimAssociationCollection"] if args.useDCH == 1 else []
+DCH_LINK_COLLECTIONS = ["DCHDigiSimAssociationCollection"] if args.useDCH else []
 
 HIT_SIM_LINK_COLLECTIONS = PLANAR_LINK_COLLECTIONS + DCH_LINK_COLLECTIONS
 
@@ -119,7 +129,7 @@ PLANAR_DIGI_COLLECTIONS = [
     "SiWrDDigis",
 ]
 
-DCH_DIGI_COLLECTIONS = ["DCHDigis"] if args.useDCH == 1 else []
+DCH_DIGI_COLLECTIONS = ["DCHDigis"] if args.useDCH else []
 
 FINDER_TRACK_COLLECTION = "GGTFTracks"
 FITTED_TRACK_COLLECTION = "Fitted_tracks_with_filtered_hits"
@@ -149,7 +159,7 @@ TopAlg = []
 # --------------------
 # Digitizers
 # --------------------
-if args.runDigi == 1:
+if args.runDigi:
     from Configurables import DDPlanarDigi, DCHdigi_v02
 
     innerVertexResolution_x = 0.003
@@ -240,7 +250,7 @@ if args.runDigi == 1:
 
     TopAlg += [vtxb_digitizer, vtxd_digitizer, siwrb_digitizer, siwrd_digitizer]
 
-    if args.useDCH == 1:
+    if args.useDCH:
         dch_digitizer = DCHdigi_v02(
             "DCHdigi2",
             InputSimHitCollection=["DCHCollection"],
@@ -262,7 +272,7 @@ if args.runDigi == 1:
 # --------------------
 # Track finder
 # --------------------
-if args.runFinder == 1:
+if args.runFinder:
     from Configurables import GGTFTrackFinder
 
     ggtf = GGTFTrackFinder(
@@ -280,7 +290,7 @@ if args.runFinder == 1:
 # --------------------
 # Reco fitter
 # --------------------
-if args.runFitter == 1:
+if args.runFitter:
     from Configurables import GenfitTrackFitter
 
     reco_fitter = GenfitTrackFitter("RecoTrackFitter")
@@ -309,7 +319,7 @@ if args.runFitter == 1:
 # --------------------
 # Perfect tracking + perfect fitter
 # --------------------
-if args.runPerfectTracking == 1:
+if args.runPerfectTracking:
     from Configurables import PerfectTrackFinder, GenfitTrackFitter
 
     perfect = PerfectTrackFinder("PerfectTrackFinder")
@@ -344,7 +354,7 @@ if args.runPerfectTracking == 1:
 # --------------------
 # Validation consumer
 # --------------------
-if args.runValidation == 1:
+if args.runValidation:
     from Configurables import TrackingValidation
 
     val = TrackingValidation("TrackingValidation")
@@ -356,7 +366,7 @@ if args.runValidation == 1:
     val.RefPointY = 0.0
     val.RefPointZ = 0.0
 
-    val.DoPerfectFit = bool(args.doPerfectFit and args.mode in [0, 2])
+    val.DoPerfectFit = args.doPerfectFit and args.mode in [0, 2]
     val.FinderEfficiencyDefinition = args.finderEfficiencyDefinition
     val.FinderPurityThreshold = args.finderPurityThreshold
 
@@ -372,7 +382,7 @@ if args.runValidation == 1:
 
     val.PerfectFittedTracks = (
         [PERFECT_FITTED_TRACK_COLLECTION]
-        if args.doPerfectFit == 1 and args.mode in [0, 2]
+        if args.doPerfectFit and args.mode in [0, 2]
         else []
     )
 
