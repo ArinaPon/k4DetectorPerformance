@@ -38,27 +38,27 @@ Typical use cases include:
 
 `TrackingValidation` consumes the following input collections:
 
-- **MC particle collection**  
+- **MC particle collection**
   Type: `edm4hep::MCParticleCollection`
 
   Used as the truth reference for particle-level validation.
 
-- **Hit-to-sim link collections**  
+- **Hit-to-sim link collections**
   Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`
 
   Collections used to associate reconstructed tracker hits with the originating simulated particles. The steering combines the available detector-specific link collections (e.g. silicon and drift-chamber links) into a single input vector passed to the validation algorithm.
 
-- **Finder track collection**  
+- **Finder track collection**
   Type: `edm4hep::TrackCollection`
 
   Collection of tracks produced by the track-finding stage.
 
-- **Fitted track collection**  
+- **Fitted track collection**
   Type: `edm4hep::TrackCollection`
 
   Collection of tracks produced by the standard fitting stage.
 
-- **Perfect fitted-track collections (optional)**  
+- **Perfect fitted-track collections (optional)**
   Type: `std::vector<const edm4hep::TrackCollection*>`
 
   Optional reference collections produced from perfect truth-based associations and fitting, used when perfect-fit validation is enabled.
@@ -162,37 +162,37 @@ k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
 
 The current test runs the full reconstruction and validation chain with the following settings:
 
-- `TRACKINGPERF_RUN_SIM = 1`  
+- `TRACKINGPERF_RUN_SIM = 1`
   Simulation step in the shell test (`false` = skip simulation and use an existing EDM4hep input file via `TRACKINGPERF_INPUT_FILE_OVERRIDE`, `true` = run simulation with `ddsim`).
 
-- `runDigi = true`  
+- `runDigi = true`
   Run digitization.
 
-- `runFinder = true`  
+- `runFinder = true`
   Run track finding.
 
-- `runFitter = true`  
+- `runFitter = true`
   Run track fitting.
 
-- `runPerfectTracking = true`  
+- `runPerfectTracking = true`
   Run perfect tracking and perfect fitting.
 
-- `runValidation = true`  
+- `runValidation = true`
   Run the validation algorithm.
 
-- `useDCH = true`  
+- `useDCH = true`
   Include drift-chamber collections.
 
-- `mode = 0`  
+- `mode = 0`
   Validation mode (`0` = full validation, `1` = finder-only validation, `2` = fitter-only validation).
 
-- `doPerfectFit = true`  
+- `doPerfectFit = true`
   Enable fitter-versus-perfect-track comparisons.
 
-- `finderEfficiencyDefinition = 1`  
+- `finderEfficiencyDefinition = 1`
   Tracking-efficiency definition (`1` = purity-based definition, `2` = purity >= 0.5 and efficiency >= 0.5).
 
-- `finderPurityThreshold = 0.75`  
+- `finderPurityThreshold = 0.75`
   Purity threshold used when `FinderEfficiencyDefinition = 1`.
 
 The boolean steering options accept both `true/false` and `1/0` inputs.
