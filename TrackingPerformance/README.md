@@ -38,29 +38,30 @@ Typical use cases include:
 
 `TrackingValidation` consumes the following input collections:
 
-- **MC particle collection**
+- **MC particle collection**  
   Type: `edm4hep::MCParticleCollection`
+
   Used as the truth reference for particle-level validation.
 
-- **Planar digi-to-sim link collections**
+- **Hit-to-sim link collections**  
   Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`
-  Used to connect reconstructed planar hits to the originating simulated particles.
 
-- **Drift-chamber digi-to-sim link collections**
-  Type: `std::vector<const edm4hep::TrackerHitSimTrackerHitLinkCollection*>`
-  Used to connect reconstructed drift-chamber hits to the originating simulated particles.
+  Collections used to associate reconstructed tracker hits with the originating simulated particles. The steering combines the available detector-specific link collections (e.g. silicon and drift-chamber links) into a single input vector passed to the validation algorithm.
 
-- **Finder track collection**
+- **Finder track collection**  
   Type: `edm4hep::TrackCollection`
+
   Collection of tracks produced by the track-finding stage.
 
-- **Fitted track collection**
+- **Fitted track collection**  
   Type: `edm4hep::TrackCollection`
+
   Collection of tracks produced by the standard fitting stage.
 
-- **Perfect fitted-track collections (optional)**
+- **Perfect fitted-track collections (optional)**  
   Type: `std::vector<const edm4hep::TrackCollection*>`
-  Optional reference collections produced from perfect truth-based associations, used when perfect-fit validation is enabled.
+
+  Optional reference collections produced from perfect truth-based associations and fitting, used when perfect-fit validation is enabled.
 
 ---
 
@@ -103,6 +104,7 @@ In `finalize()`, the algorithm also writes summary plots to the same ROOT file, 
 - momentum resolution vs momentum,
 - transverse-momentum resolution vs momentum.
 
+Additional plots may be added in future developments.
 ---
 
 ## Finder validation: efficiency and purity
@@ -160,37 +162,40 @@ k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
 
 The current test runs the full reconstruction and validation chain with the following settings:
 
-- `TRACKINGPERF_RUN_SIM = 1`
-  simulation step in the shell test (`0` = skip simulation and use an existing EDM4hep input file via `TRACKINGPERF_INPUT_FILE_OVERRIDE`, `1` = run simulation with `ddsim`);
+- `TRACKINGPERF_RUN_SIM = 1`  
+  Simulation step in the shell test (`false` = skip simulation and use an existing EDM4hep input file via `TRACKINGPERF_INPUT_FILE_OVERRIDE`, `true` = run simulation with `ddsim`).
 
-- `runDigi = 1`
-  digitization step (`0` = skip digitization, `1` = run digitization);
+- `runDigi = true`  
+  Run digitization.
 
-- `runFinder = 1`
-  track-finder step (`0` = skip track finder, `1` = run track finder);
+- `runFinder = true`  
+  Run track finding.
 
-- `runFitter = 1`
-  reconstructed-track fitter (`0` = skip reco fitter, `1` = run reco fitter);
+- `runFitter = true`  
+  Run track fitting.
 
-- `runPerfectTracking = 1`
-  perfect-tracking and perfect-fitter chain (`0` = skip perfect tracking/perfect fitter, `1` = run them);
+- `runPerfectTracking = true`  
+  Run perfect tracking and perfect fitting.
 
-- `runValidation = 1`
-  validation step (`0` = skip validation, `1` = run validation);
+- `runValidation = true`  
+  Run the validation algorithm.
 
-- `useDCH = 1`
-  drift-chamber collections (`0` = disable DCH, `1` = use DCH);
+- `useDCH = true`  
+  Include drift-chamber collections.
 
-- `mode = 0`
-  validation mode (`0` = full validation, `1` = finder-only validation, `2` = fitter-only validation);
+- `mode = 0`  
+  Validation mode (`0` = full validation, `1` = finder-only validation, `2` = fitter-only validation).
 
-- `doPerfectFit = 1`
-  fitter-versus-perfect comparison (`0` = disable fitter-vs-perfect filling, `1` = enable it);
+- `doPerfectFit = true`  
+  Enable fitter-versus-perfect-track comparisons.
 
-- `finderEfficiencyDefinition = 1`
-  tracking-efficiency definition (`1` = purity-based definition, `2` = purity >= 0.5 and efficiency >= 0.5);
+- `finderEfficiencyDefinition = 1`  
+  Tracking-efficiency definition (`1` = purity-based definition, `2` = purity >= 0.5 and efficiency >= 0.5).
 
-- `finderPurityThreshold = 0.75`
-  purity threshold used when `FinderEfficiencyDefinition = 1`.
+- `finderPurityThreshold = 0.75`  
+  Purity threshold used when `FinderEfficiencyDefinition = 1`.
+
+The boolean steering options accept both `true/false` and `1/0` inputs.
 
 These command-line flags are defined in `runTrackingValidation.py`, which allows the same steering file to be used either for the full chain or for reduced workflows in which some reconstruction steps are skipped and only the validation is run.
+
