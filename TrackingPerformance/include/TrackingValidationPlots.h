@@ -52,17 +52,26 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values, do
  * @brief Build the d0 resolution as a function of momentum.
  *
  * The function reads the fitter validation tree, collects residual values in
- momentum bins, extracts the effective sigma in each bean, and return the
+ momentum bins, extracts the effective sigma in each bin, and return the
  result as a TGraphErrors.
  */
 
 TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName = "g_d0_resolution_vs_p", double pMin = 0.1,
                                          double pMax = 100.0, double logStep = 0.15);
 
-/// Draw the d0 resolution graph on a logarithmic momentum axis
-TCanvas* drawD0ResolutionCanvas(TGraphErrors* g, const char* canvasName = "c_d0_resolution_vs_p", double xMin = 0.1,
-                                double xMax = 100.0);
+TGraphErrors* makeZ0ResolutionVsMomentum(TTree* tree, const char* graphName = "g_z0_resolution_vs_p",
+                                         double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
 
+TGraphErrors* makePhiResolutionVsMomentum(TTree* tree, const char* graphName = "g_phi_resolution_vs_p",
+                                          double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
+
+TGraphErrors* makeOmegaResolutionVsMomentum(TTree* tree, const char* graphName = "g_omega_resolution_vs_p",
+                                            double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
+
+TGraphErrors* makeTanLambdaResolutionVsMomentum(TTree* tree, const char* graphName = "g_tanlambda_resolution_vs_p",
+                                                double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
+                                                
+                                        
 /**
  * @brief Build the total-momentum resolution as a function of momentum.
  *
@@ -82,6 +91,7 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphNam
  */
 TGraphErrors* makePtResolutionVsMomentum(TTree* tree, const char* graphName = "g_pt_resolution_vs_p", double pMin = 0.1,
                                          double pMax = 100.0, double logStep = 0.15);
+
 
 /// Draw a generic resolution graph on a logarithmic momentum axis
 TCanvas* drawResolutionCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin = 0.1,

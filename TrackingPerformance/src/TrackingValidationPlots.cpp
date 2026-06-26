@@ -29,7 +29,6 @@
 // makeLogBins
 // interpolateQuantile
 // makeD0ResolutionVsMomentum
-// drawD0ResolutionCanvas
 // makeMomentumResolutionVsMomentum
 // makePtResolutionVsMomentum
 // drawResolutionCanvas
@@ -147,7 +146,22 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values, do
   return std::sqrt(var);
 }
 
-TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
+
+ /**
+ * @brief Generic helper for building resolution-versus-momentum plots.
+ *
+ * The function reads a residual branch from the fitter validation tree,
+ * groups the residuals in logarithmic momentum bins, computes the effective
+ * sigma in each bin, and returns the result as a TGraphErrors.
+ * 
+ * The same implementation is reused for the d0, z0, phi, omega, and 
+ * tan(lambda) resolution plots.
+ */
+
+namespace {
+TGraphErrors* makeResidualResolutionVsMomentum(TTree* tree, const char* residualBranchName, const char* graphName,
+                                               const char* yAxisTitle, double scaleFactor, double pMin,
+                                               double pMax, double logStep, unsigned int seedOffset) {
   if (!tree)
     return nullptr;
 
@@ -156,26 +170,26 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, dou
 
   std::vector<std::vector<double>> residualsPerBin(nBins);
 
-  std::vector<float>* resD0 = nullptr;
+  std::vector<float>* residuals = nullptr;
   std::vector<float>* p_ref_vec = nullptr;
 
   tree->SetBranchAddress("p_ref", &p_ref_vec);
-  tree->SetBranchAddress("resD0", &resD0);
+  tree->SetBranchAddress(residualBranchName, &residuals);
 
   const Long64_t nEntries = tree->GetEntries();
   for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
     tree->GetEntry(ievt);
 
-    if (!p_ref_vec || !resD0)
+    if (!p_ref_vec || !residuals)
       continue;
-    if (p_ref_vec->size() != resD0->size())
+    if (p_ref_vec->size() != residuals->size())
       continue;
 
     for (size_t i = 0; i < p_ref_vec->size(); ++i) {
       const double p = (*p_ref_vec)[i];
-      const double d0_um = (*resD0)[i] * 1000.0;
+      const double res = (*residuals)[i] * scaleFactor;
 
-      if (!std::isfinite(p) || !std::isfinite(d0_um))
+      if (!std::isfinite(p) || !std::isfinite(res))
         continue;
       if (p < pMin || p >= pMax)
         continue;
@@ -190,13 +204,13 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, dou
       if (bin < 0)
         continue;
 
-      residualsPerBin[bin].push_back(d0_um);
+      residualsPerBin[bin].push_back(res);
     }
   }
 
   TGraphErrors* g = new TGraphErrors();
   g->SetName(graphName);
-  g->SetTitle(";p_{ref} [GeV];#sigma(d_{0}) [#mum]");
+  g->SetTitle((";p_{ref} [GeV];" + std::string(yAxisTitle)).c_str());
 
   int ip = 0;
   for (int b = 0; b < nBins; ++b) {
@@ -208,7 +222,8 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, dou
       continue;
 
     const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-    const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, 12345u + b);
+    const double sigmaErr =
+        computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, seedOffset + b);
 
     g->SetPoint(ip, pCenter, eff.sigmaEff);
     g->SetPointError(ip, 0.0, sigmaErr);
@@ -217,23 +232,76 @@ TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, dou
 
   return g;
 }
+} // namespace
 
-TCanvas* drawD0ResolutionCanvas(TGraphErrors* g, const char* canvasName, double xMin, double xMax) {
-  if (!g)
-    return nullptr;
+/**
+ * @brief Build the d0 resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, collects d0 residual values
+ * in momentum bins, extracts the effective sigma in each bin, and returns the
+ * result as a TGraphErrors.
+ */
 
-  gStyle->SetOptStat(0);
-
-  TCanvas* c = new TCanvas(canvasName, "d0 resolution vs momentum", 800, 600);
-  c->SetLogx();
-
-  g->SetMarkerStyle(20);
-  g->SetLineWidth(2);
-  g->GetXaxis()->SetLimits(xMin, xMax);
-  g->Draw("AP");
-
-  return c;
+TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
+  return makeResidualResolutionVsMomentum(tree, "resD0", graphName, "#sigma(d_{0}) [#mum]", 1000.0, pMin, pMax,
+                                          logStep, 12345u);
 }
+
+/**
+* @brief Build the z0 resolution as a function of momentum.
+*
+* The function reads the fitter validation tree, collects z0 residual values
+* in momentum bins, extracts the effective sigma in each bin, and returns the 
+* result as a TGraphErrors.
+*/
+
+TGraphErrors* makeZ0ResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
+  return makeResidualResolutionVsMomentum(tree, "resZ0", graphName, "#sigma(z_{0}) [#mum]", 1000.0, pMin, pMax,
+                                          logStep, 13345u);
+}
+
+/**
+* @brief Build the phi resolution as a function of momentum.
+*
+* The function reads the fitter validation tree, collects phi residual values
+* in momentum bins, extracts the effective sigma in each bin, and returns the
+* result as a TGraphErrors.
+*/
+
+TGraphErrors* makePhiResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
+                                          double logStep) {
+  return makeResidualResolutionVsMomentum(tree, "resPhi", graphName, "#sigma(#phi) [rad]", 1.0, pMin, pMax,
+                                          logStep, 14345u);
+}
+
+/**
+* @brief Build the omega resolution as a function of momentum.
+*
+* The function reads the fitter validation tree, collects omega residual values
+* in momentum bins, extracts the effective sigma in each bin, and returns the 
+* result as a TGraphErrors.
+*/
+
+TGraphErrors* makeOmegaResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
+                                            double logStep) {
+  return makeResidualResolutionVsMomentum(tree, "resOmega", graphName, "#sigma(#omega) [1/mm]", 1.0, pMin, pMax,
+                                          logStep, 15345u);
+}
+
+/**
+* @brief Build the tanLambda resolution as a function of momentum.
+*
+* The function reads the fitter validation tree, collects tanLambda residual values
+* in momentum bins, extracts the effective sigma in each bin, and returns the
+* result as a TGraphErrors.
+*/
+
+TGraphErrors* makeTanLambdaResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
+                                                double logStep) {
+  return makeResidualResolutionVsMomentum(tree, "resTanLambda", graphName, "#sigma(tan#lambda)", 1.0, pMin, pMax,
+                                          logStep, 16345u);
+}
+
 
 TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
                                                double logStep) {

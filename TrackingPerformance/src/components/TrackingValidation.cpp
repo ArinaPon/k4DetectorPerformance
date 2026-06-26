@@ -263,15 +263,61 @@ struct TrackingValidation final
         m_fit_vs_perfect.tree->Write();
 
       // fitter summary plots
-      // d0 resolution vs momentum from fitter_vs_mc
+      // d0, z0, phi, omega, tanLambda  resolution vs momentum from fitter_vs_mc
+
       TGraphErrors* g_d0_vs_p = TrackingValidationPlots::makeD0ResolutionVsMomentum(
           m_fit_vs_mc.tree, "g_d0_resolution_vs_p", 0.1, 100.0, 0.15);
       if (g_d0_vs_p) {
-        TCanvas* c_d0_vs_p =
-            TrackingValidationPlots::drawD0ResolutionCanvas(g_d0_vs_p, "c_d0_resolution_vs_p", 0.1, 100.0);
+        TCanvas* c_d0_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_d0_vs_p, "c_d0_resolution_vs_p", "d0 resolution vs momentum;p_{ref} [GeV];#sigma(d_{0}) [#mum]",
+            0.1, 100.0);
         g_d0_vs_p->Write();
         if (c_d0_vs_p)
           c_d0_vs_p->Write();
+            }
+
+      TGraphErrors* g_z0_vs_p = TrackingValidationPlots::makeZ0ResolutionVsMomentum(
+          m_fit_vs_mc.tree, "g_z0_resolution_vs_p", 0.1, 100.0, 0.15);
+      if (g_z0_vs_p) {
+        TCanvas* c_z0_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_z0_vs_p, "c_z0_resolution_vs_p", "z0 resolution vs momentum;p_{ref} [GeV];#sigma(z_{0}) [#mum]",
+            0.1, 100.0);
+        g_z0_vs_p->Write();
+        if (c_z0_vs_p)
+          c_z0_vs_p->Write();
+      }
+
+      TGraphErrors* g_phi_vs_p = TrackingValidationPlots::makePhiResolutionVsMomentum(
+          m_fit_vs_mc.tree, "g_phi_resolution_vs_p", 0.1, 100.0, 0.15);
+      if (g_phi_vs_p) {
+        TCanvas* c_phi_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_phi_vs_p, "c_phi_resolution_vs_p", "phi resolution vs momentum;p_{ref} [GeV];#sigma(#phi) [rad]",
+            0.1, 100.0);
+        g_phi_vs_p->Write();
+        if (c_phi_vs_p)
+          c_phi_vs_p->Write();
+      }
+
+      TGraphErrors* g_omega_vs_p = TrackingValidationPlots::makeOmegaResolutionVsMomentum(
+          m_fit_vs_mc.tree, "g_omega_resolution_vs_p", 0.1, 100.0, 0.15);
+      if (g_omega_vs_p) {
+        TCanvas* c_omega_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_omega_vs_p, "c_omega_resolution_vs_p",
+            "omega resolution vs momentum;p_{ref} [GeV];#sigma(#omega) [1/mm]", 0.1, 100.0);
+        g_omega_vs_p->Write();
+        if (c_omega_vs_p)
+          c_omega_vs_p->Write();
+      }
+
+      TGraphErrors* g_tanl_vs_p = TrackingValidationPlots::makeTanLambdaResolutionVsMomentum(
+          m_fit_vs_mc.tree, "g_tanlambda_resolution_vs_p", 0.1, 100.0, 0.15);
+      if (g_tanl_vs_p) {
+        TCanvas* c_tanl_vs_p = TrackingValidationPlots::drawResolutionCanvas(
+            g_tanl_vs_p, "c_tanlambda_resolution_vs_p",
+            "tanLambda resolution vs momentum;p_{ref} [GeV];#sigma(tan#lambda)", 0.1, 100.0);
+        g_tanl_vs_p->Write();
+        if (c_tanl_vs_p)
+          c_tanl_vs_p->Write();
       }
 
       // p resolution vs momentum
@@ -322,7 +368,7 @@ private:
   // 0 full, 1 finder-only, 2 fitter-only
   Gaudi::Property<int> m_mode{this, "Mode", 0, "Validation mode: 0=Full, 1=FinderOnly, 2=FitterOnly"};
 
-  Gaudi::Property<float> m_Bz{this, "Bz", 2.f, "Magnetic field Bz [T] used in omega convention (GenFit-style)"};
+  Gaudi::Property<float> m_Bz{this, "Bz", 2.f, "Magnetic field Bz [T] used in omega convention"};
 
   Gaudi::Property<float> m_refX{this, "RefPointX", 0.f,
                                 "Reference point X [mm] (must match fitter m_VP_referencePoint)"};
