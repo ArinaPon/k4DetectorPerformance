@@ -18,6 +18,9 @@
  */
 #include "TrackingValidationPlots.h"
 #include "TAxis.h"
+#include "TF1.h"
+#include "TH1F.h"
+#include "TPaveStats.h"
 #include "TStyle.h"
 #include <algorithm>
 #include <cmath>
@@ -146,92 +149,90 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values, do
   return std::sqrt(var);
 }
 
-
- /**
+/**
  * @brief Generic helper for building resolution-versus-momentum plots.
  *
  * The function reads a residual branch from the fitter validation tree,
  * groups the residuals in logarithmic momentum bins, computes the effective
  * sigma in each bin, and returns the result as a TGraphErrors.
- * 
- * The same implementation is reused for the d0, z0, phi, omega, and 
+ *
+ * The same implementation is reused for the d0, z0, phi, omega, and
  * tan(lambda) resolution plots.
  */
 
 namespace {
-TGraphErrors* makeResidualResolutionVsMomentum(TTree* tree, const char* residualBranchName, const char* graphName,
-                                               const char* yAxisTitle, double scaleFactor, double pMin,
-                                               double pMax, double logStep, unsigned int seedOffset) {
-  if (!tree)
-    return nullptr;
+  TGraphErrors* makeResidualResolutionVsMomentum(TTree* tree, const char* residualBranchName, const char* graphName,
+                                                 const char* yAxisTitle, double scaleFactor, double pMin, double pMax,
+                                                 double logStep, unsigned int seedOffset) {
+    if (!tree)
+      return nullptr;
 
-  std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
-  const int nBins = bins.size() - 1;
+    std::vector<double> bins = makeLogBins(pMin, pMax, logStep);
+    const int nBins = bins.size() - 1;
 
-  std::vector<std::vector<double>> residualsPerBin(nBins);
+    std::vector<std::vector<double>> residualsPerBin(nBins);
 
-  std::vector<float>* residuals = nullptr;
-  std::vector<float>* p_ref_vec = nullptr;
+    std::vector<float>* residuals = nullptr;
+    std::vector<float>* p_ref_vec = nullptr;
 
-  tree->SetBranchAddress("p_ref", &p_ref_vec);
-  tree->SetBranchAddress(residualBranchName, &residuals);
+    tree->SetBranchAddress("p_ref", &p_ref_vec);
+    tree->SetBranchAddress(residualBranchName, &residuals);
 
-  const Long64_t nEntries = tree->GetEntries();
-  for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
-    tree->GetEntry(ievt);
+    const Long64_t nEntries = tree->GetEntries();
+    for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
+      tree->GetEntry(ievt);
 
-    if (!p_ref_vec || !residuals)
-      continue;
-    if (p_ref_vec->size() != residuals->size())
-      continue;
-
-    for (size_t i = 0; i < p_ref_vec->size(); ++i) {
-      const double p = (*p_ref_vec)[i];
-      const double res = (*residuals)[i] * scaleFactor;
-
-      if (!std::isfinite(p) || !std::isfinite(res))
+      if (!p_ref_vec || !residuals)
         continue;
-      if (p < pMin || p >= pMax)
+      if (p_ref_vec->size() != residuals->size())
         continue;
 
-      int bin = -1;
-      for (int b = 0; b < nBins; ++b) {
-        if (p >= bins[b] && p < bins[b + 1]) {
-          bin = b;
-          break;
+      for (size_t i = 0; i < p_ref_vec->size(); ++i) {
+        const double p = (*p_ref_vec)[i];
+        const double res = (*residuals)[i] * scaleFactor;
+
+        if (!std::isfinite(p) || !std::isfinite(res))
+          continue;
+        if (p < pMin || p >= pMax)
+          continue;
+
+        int bin = -1;
+        for (int b = 0; b < nBins; ++b) {
+          if (p >= bins[b] && p < bins[b + 1]) {
+            bin = b;
+            break;
+          }
         }
+        if (bin < 0)
+          continue;
+
+        residualsPerBin[bin].push_back(res);
       }
-      if (bin < 0)
+    }
+
+    TGraphErrors* g = new TGraphErrors();
+    g->SetName(graphName);
+    g->SetTitle((";p_{ref} [GeV];" + std::string(yAxisTitle)).c_str());
+
+    int ip = 0;
+    for (int b = 0; b < nBins; ++b) {
+      if (residualsPerBin[b].size() < 20)
         continue;
 
-      residualsPerBin[bin].push_back(res);
+      const auto eff = computeEffectiveSigma(residualsPerBin[b]);
+      if (!eff.valid)
+        continue;
+
+      const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
+      const double sigmaErr = computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, seedOffset + b);
+
+      g->SetPoint(ip, pCenter, eff.sigmaEff);
+      g->SetPointError(ip, 0.0, sigmaErr);
+      ++ip;
     }
+
+    return g;
   }
-
-  TGraphErrors* g = new TGraphErrors();
-  g->SetName(graphName);
-  g->SetTitle((";p_{ref} [GeV];" + std::string(yAxisTitle)).c_str());
-
-  int ip = 0;
-  for (int b = 0; b < nBins; ++b) {
-    if (residualsPerBin[b].size() < 20)
-      continue;
-
-    const auto eff = computeEffectiveSigma(residualsPerBin[b]);
-    if (!eff.valid)
-      continue;
-
-    const double pCenter = std::sqrt(bins[b] * bins[b + 1]);
-    const double sigmaErr =
-        computeEffectiveSigmaBootstrapError(residualsPerBin[b], 0.6827, 200, seedOffset + b);
-
-    g->SetPoint(ip, pCenter, eff.sigmaEff);
-    g->SetPointError(ip, 0.0, sigmaErr);
-    ++ip;
-  }
-
-  return g;
-}
 } // namespace
 
 /**
@@ -243,44 +244,44 @@ TGraphErrors* makeResidualResolutionVsMomentum(TTree* tree, const char* residual
  */
 
 TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
-  return makeResidualResolutionVsMomentum(tree, "resD0", graphName, "#sigma(d_{0}) [#mum]", 1000.0, pMin, pMax,
-                                          logStep, 12345u);
+  return makeResidualResolutionVsMomentum(tree, "resD0", graphName, "#sigma(d_{0}) [#mum]", 1000.0, pMin, pMax, logStep,
+                                          12345u);
 }
 
 /**
-* @brief Build the z0 resolution as a function of momentum.
-*
-* The function reads the fitter validation tree, collects z0 residual values
-* in momentum bins, extracts the effective sigma in each bin, and returns the 
-* result as a TGraphErrors.
-*/
+ * @brief Build the z0 resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, collects z0 residual values
+ * in momentum bins, extracts the effective sigma in each bin, and returns the
+ * result as a TGraphErrors.
+ */
 
 TGraphErrors* makeZ0ResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax, double logStep) {
-  return makeResidualResolutionVsMomentum(tree, "resZ0", graphName, "#sigma(z_{0}) [#mum]", 1000.0, pMin, pMax,
-                                          logStep, 13345u);
+  return makeResidualResolutionVsMomentum(tree, "resZ0", graphName, "#sigma(z_{0}) [#mum]", 1000.0, pMin, pMax, logStep,
+                                          13345u);
 }
 
 /**
-* @brief Build the phi resolution as a function of momentum.
-*
-* The function reads the fitter validation tree, collects phi residual values
-* in momentum bins, extracts the effective sigma in each bin, and returns the
-* result as a TGraphErrors.
-*/
+ * @brief Build the phi resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, collects phi residual values
+ * in momentum bins, extracts the effective sigma in each bin, and returns the
+ * result as a TGraphErrors.
+ */
 
 TGraphErrors* makePhiResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
                                           double logStep) {
-  return makeResidualResolutionVsMomentum(tree, "resPhi", graphName, "#sigma(#phi) [rad]", 1.0, pMin, pMax,
-                                          logStep, 14345u);
+  return makeResidualResolutionVsMomentum(tree, "resPhi", graphName, "#sigma(#phi) [rad]", 1.0, pMin, pMax, logStep,
+                                          14345u);
 }
 
 /**
-* @brief Build the omega resolution as a function of momentum.
-*
-* The function reads the fitter validation tree, collects omega residual values
-* in momentum bins, extracts the effective sigma in each bin, and returns the 
-* result as a TGraphErrors.
-*/
+ * @brief Build the omega resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, collects omega residual values
+ * in momentum bins, extracts the effective sigma in each bin, and returns the
+ * result as a TGraphErrors.
+ */
 
 TGraphErrors* makeOmegaResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
                                             double logStep) {
@@ -289,19 +290,18 @@ TGraphErrors* makeOmegaResolutionVsMomentum(TTree* tree, const char* graphName, 
 }
 
 /**
-* @brief Build the tanLambda resolution as a function of momentum.
-*
-* The function reads the fitter validation tree, collects tanLambda residual values
-* in momentum bins, extracts the effective sigma in each bin, and returns the
-* result as a TGraphErrors.
-*/
+ * @brief Build the tanLambda resolution as a function of momentum.
+ *
+ * The function reads the fitter validation tree, collects tanLambda residual values
+ * in momentum bins, extracts the effective sigma in each bin, and returns the
+ * result as a TGraphErrors.
+ */
 
 TGraphErrors* makeTanLambdaResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
                                                 double logStep) {
   return makeResidualResolutionVsMomentum(tree, "resTanLambda", graphName, "#sigma(tan#lambda)", 1.0, pMin, pMax,
                                           logStep, 16345u);
 }
-
 
 TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphName, double pMin, double pMax,
                                                double logStep) {
@@ -588,6 +588,81 @@ TCanvas* drawEfficiencyCanvas(TGraphErrors* g, const char* canvasName, const cha
   g->GetYaxis()->SetRangeUser(0.0, 1.05);
   g->GetXaxis()->SetLimits(xMin, xMax);
   g->Draw("AP");
+
+  return c;
+}
+
+TH1F* makePullHistogram(TTree* tree, const char* branchName, const char* histName, const char* title, int nBins,
+                        double xMin, double xMax) {
+  if (!tree)
+    return nullptr;
+
+  auto* branch = tree->GetBranch(branchName);
+  if (!branch)
+    return nullptr;
+
+  std::vector<float>* pulls = nullptr;
+  branch->SetAddress(&pulls);
+
+  TH1F* h = new TH1F(histName, title, nBins, xMin, xMax);
+  h->GetXaxis()->SetTitle(branchName);
+  h->GetYaxis()->SetTitle("Entries");
+
+  const Long64_t nEntries = tree->GetEntries();
+  for (Long64_t ievt = 0; ievt < nEntries; ++ievt) {
+    branch->GetEntry(ievt);
+
+    if (!pulls)
+      continue;
+
+    for (const auto pull : *pulls) {
+      if (!std::isfinite(pull))
+        continue;
+      h->Fill(pull);
+    }
+  }
+
+  branch->ResetAddress();
+  return h;
+}
+
+TCanvas* drawPullCanvas(TH1F* h, const char* canvasName, const char* title) {
+  if (!h)
+    return nullptr;
+
+  gStyle->SetOptStat(1100);
+  gStyle->SetOptFit(1111);
+
+  TCanvas* c = new TCanvas(canvasName, title, 900, 700);
+  c->SetGrid();
+
+  h->SetTitle(title);
+  h->SetLineColor(kBlue + 1);
+  h->SetLineWidth(2);
+
+  h->Draw();
+
+  if (h->GetEntries() > 500) {
+    TF1* gaus = new TF1((std::string(h->GetName()) + "_gaus").c_str(), "gaus", -3.0, 3.0);
+    gaus->SetLineColor(kRed);
+    gaus->SetLineWidth(2);
+
+    h->Fit(gaus, "R");
+  }
+
+  c->Update();
+
+  TPaveStats* stats = static_cast<TPaveStats*>(h->FindObject("stats"));
+  if (stats) {
+    stats->SetX1NDC(0.72);
+    stats->SetX2NDC(0.92);
+    stats->SetY1NDC(0.70);
+    stats->SetY2NDC(0.92);
+    stats->SetTextSize(0.022);
+  }
+
+  c->Modified();
+  c->Update();
 
   return c;
 }

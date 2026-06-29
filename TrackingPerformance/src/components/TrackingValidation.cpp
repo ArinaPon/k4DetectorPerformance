@@ -47,6 +47,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -269,19 +270,19 @@ struct TrackingValidation final
           m_fit_vs_mc.tree, "g_d0_resolution_vs_p", 0.1, 100.0, 0.15);
       if (g_d0_vs_p) {
         TCanvas* c_d0_vs_p = TrackingValidationPlots::drawResolutionCanvas(
-            g_d0_vs_p, "c_d0_resolution_vs_p", "d0 resolution vs momentum;p_{ref} [GeV];#sigma(d_{0}) [#mum]",
-            0.1, 100.0);
+            g_d0_vs_p, "c_d0_resolution_vs_p", "d0 resolution vs momentum;p_{ref} [GeV];#sigma(d_{0}) [#mum]", 0.1,
+            100.0);
         g_d0_vs_p->Write();
         if (c_d0_vs_p)
           c_d0_vs_p->Write();
-            }
+      }
 
       TGraphErrors* g_z0_vs_p = TrackingValidationPlots::makeZ0ResolutionVsMomentum(
           m_fit_vs_mc.tree, "g_z0_resolution_vs_p", 0.1, 100.0, 0.15);
       if (g_z0_vs_p) {
         TCanvas* c_z0_vs_p = TrackingValidationPlots::drawResolutionCanvas(
-            g_z0_vs_p, "c_z0_resolution_vs_p", "z0 resolution vs momentum;p_{ref} [GeV];#sigma(z_{0}) [#mum]",
-            0.1, 100.0);
+            g_z0_vs_p, "c_z0_resolution_vs_p", "z0 resolution vs momentum;p_{ref} [GeV];#sigma(z_{0}) [#mum]", 0.1,
+            100.0);
         g_z0_vs_p->Write();
         if (c_z0_vs_p)
           c_z0_vs_p->Write();
@@ -291,8 +292,8 @@ struct TrackingValidation final
           m_fit_vs_mc.tree, "g_phi_resolution_vs_p", 0.1, 100.0, 0.15);
       if (g_phi_vs_p) {
         TCanvas* c_phi_vs_p = TrackingValidationPlots::drawResolutionCanvas(
-            g_phi_vs_p, "c_phi_resolution_vs_p", "phi resolution vs momentum;p_{ref} [GeV];#sigma(#phi) [rad]",
-            0.1, 100.0);
+            g_phi_vs_p, "c_phi_resolution_vs_p", "phi resolution vs momentum;p_{ref} [GeV];#sigma(#phi) [rad]", 0.1,
+            100.0);
         g_phi_vs_p->Write();
         if (c_phi_vs_p)
           c_phi_vs_p->Write();
@@ -302,8 +303,8 @@ struct TrackingValidation final
           m_fit_vs_mc.tree, "g_omega_resolution_vs_p", 0.1, 100.0, 0.15);
       if (g_omega_vs_p) {
         TCanvas* c_omega_vs_p = TrackingValidationPlots::drawResolutionCanvas(
-            g_omega_vs_p, "c_omega_resolution_vs_p",
-            "omega resolution vs momentum;p_{ref} [GeV];#sigma(#omega) [1/mm]", 0.1, 100.0);
+            g_omega_vs_p, "c_omega_resolution_vs_p", "omega resolution vs momentum;p_{ref} [GeV];#sigma(#omega) [1/mm]",
+            0.1, 100.0);
         g_omega_vs_p->Write();
         if (c_omega_vs_p)
           c_omega_vs_p->Write();
@@ -318,6 +319,24 @@ struct TrackingValidation final
         g_tanl_vs_p->Write();
         if (c_tanl_vs_p)
           c_tanl_vs_p->Write();
+      }
+      const std::vector<std::tuple<const char*, const char*, const char*>> pullPlots = {
+          {"pullD0", "h_pull_d0", "d0 pull plot;pull(d_{0});Entries"},
+          {"pullZ0", "h_pull_z0", "z0 pull plot;pull(z_{0});Entries"},
+          {"pullPhi", "h_pull_phi", "phi pull plot;pull(#phi);Entries"},
+          {"pullOmega", "h_pull_omega", "omega pull plot;pull(#omega);Entries"},
+          {"pullTanLambda", "h_pull_tanlambda", "tanLambda pull plot;pull(tan#lambda);Entries"},
+      };
+
+      for (const auto& [branchName, histName, title] : pullPlots) {
+        TH1F* h = TrackingValidationPlots::makePullHistogram(m_fit_vs_mc.tree, branchName, histName, title);
+        if (h) {
+          std::string canvasName = std::string("c_") + histName + "_vs_mc";
+          TCanvas* c = TrackingValidationPlots::drawPullCanvas(h, canvasName.c_str(), title);
+          h->Write();
+          if (c)
+            c->Write();
+        }
       }
 
       // p resolution vs momentum
@@ -446,6 +465,8 @@ private:
     std::vector<int> track_location;
 
     std::vector<float> resD0, resZ0, resPhi, resOmega, resTanL;
+    std::vector<float> pullD0, pullZ0, pullPhi, pullOmega, pullTanL;
+    std::vector<float> errD0, errZ0, errPhi, errOmega, errTanL;
     std::vector<float> p_reco, p_ref;
     std::vector<float> pT_reco, pT_ref;
 
@@ -457,6 +478,16 @@ private:
       resPhi.clear();
       resOmega.clear();
       resTanL.clear();
+      pullD0.clear();
+      pullZ0.clear();
+      pullPhi.clear();
+      pullOmega.clear();
+      pullTanL.clear();
+      errD0.clear();
+      errZ0.clear();
+      errPhi.clear();
+      errOmega.clear();
+      errTanL.clear();
       p_reco.clear();
       p_ref.clear();
       pT_reco.clear();
@@ -492,6 +523,16 @@ private:
     t.tree->Branch("resPhi", &t.resPhi);
     t.tree->Branch("resOmega", &t.resOmega);
     t.tree->Branch("resTanLambda", &t.resTanL);
+    t.tree->Branch("pullD0", &t.pullD0);
+    t.tree->Branch("pullZ0", &t.pullZ0);
+    t.tree->Branch("pullPhi", &t.pullPhi);
+    t.tree->Branch("pullOmega", &t.pullOmega);
+    t.tree->Branch("pullTanLambda", &t.pullTanL);
+    t.tree->Branch("errD0", &t.errD0);
+    t.tree->Branch("errZ0", &t.errZ0);
+    t.tree->Branch("errPhi", &t.errPhi);
+    t.tree->Branch("errOmega", &t.errOmega);
+    t.tree->Branch("errTanLambda", &t.errTanL);
     t.tree->Branch("p_reco", &t.p_reco);
     t.tree->Branch("p_ref", &t.p_ref);
     t.tree->Branch("pT_reco", &t.pT_reco);
@@ -728,6 +769,29 @@ private:
     return bestP;
   }
 
+  /**
+   * @brief Compute the normalized residual (pull).
+   *
+   * Returns residual / sqrt(variance). If the variance is non-positive
+   * or not finite, NaN is returned to avoid invalid values.
+   */
+
+  // ----------- pull calculation helper ----------
+  static float safePull(float residual, float variance) {
+    if (!std::isfinite(residual) || !std::isfinite(variance) || variance <= 0.f) {
+      return std::numeric_limits<float>::quiet_NaN();
+    }
+    return residual / std::sqrt(variance);
+  }
+  // helper for err
+
+  static float safeSqrt(float variance) {
+    if (!std::isfinite(variance) || variance <= 0.f) {
+      return std::numeric_limits<float>::quiet_NaN();
+    }
+    return std::sqrt(variance);
+  }
+
   // ---------- fitter trees ----------
   template <typename PerfectMapT>
   void fillFitterTrees(int event, const edm4hep::MCParticleCollection& mcParts,
@@ -772,14 +836,46 @@ private:
       const TrackingValidationHelpers::HelixParams refMC = TrackingValidationHelpers::truthFromMC_GenfitConvention(
           mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
 
+      // Track-parameter uncertainties from the fitted-state covariance matrix
+
+      const float varD0 = stReco->getCovMatrix(edm4hep::TrackParams::d0, edm4hep::TrackParams::d0);
+      const float varPhi = stReco->getCovMatrix(edm4hep::TrackParams::phi, edm4hep::TrackParams::phi);
+      const float varOmega = stReco->getCovMatrix(edm4hep::TrackParams::omega, edm4hep::TrackParams::omega);
+      const float varZ0 = stReco->getCovMatrix(edm4hep::TrackParams::z0, edm4hep::TrackParams::z0);
+      const float varTanL = stReco->getCovMatrix(edm4hep::TrackParams::tanLambda, edm4hep::TrackParams::tanLambda);
+
+      const float errD0 = safeSqrt(varD0);
+      const float errPhi = safeSqrt(varPhi);
+      const float errOmega = safeSqrt(varOmega);
+      const float errZ0 = safeSqrt(varZ0);
+      const float errTanL = safeSqrt(varTanL);
+
+      // Residuals with respect to the MC truth helix parameters
+
+      const float resD0 = reco.D0 - refMC.D0;
+      const float resZ0 = reco.Z0 - refMC.Z0;
+      const float resPhi = TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refMC.phi);
+      const float resOmega = reco.omega - refMC.omega;
+      const float resTanL = reco.tanLambda - refMC.tanLambda;
+
       // --- vs MC ---
       m_fit_vs_mc.track_index.push_back(tIdx);
       m_fit_vs_mc.track_location.push_back(int(stReco->location));
-      m_fit_vs_mc.resD0.push_back(reco.D0 - refMC.D0);
-      m_fit_vs_mc.resZ0.push_back(reco.Z0 - refMC.Z0);
-      m_fit_vs_mc.resPhi.push_back(TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refMC.phi));
-      m_fit_vs_mc.resOmega.push_back(reco.omega - refMC.omega);
-      m_fit_vs_mc.resTanL.push_back(reco.tanLambda - refMC.tanLambda);
+      m_fit_vs_mc.resD0.push_back(resD0);
+      m_fit_vs_mc.resZ0.push_back(resZ0);
+      m_fit_vs_mc.resPhi.push_back(resPhi);
+      m_fit_vs_mc.resOmega.push_back(resOmega);
+      m_fit_vs_mc.resTanL.push_back(resTanL);
+      m_fit_vs_mc.pullD0.push_back(safePull(resD0, varD0));
+      m_fit_vs_mc.pullZ0.push_back(safePull(resZ0, varZ0));
+      m_fit_vs_mc.pullPhi.push_back(safePull(resPhi, varPhi));
+      m_fit_vs_mc.pullOmega.push_back(safePull(resOmega, varOmega));
+      m_fit_vs_mc.pullTanL.push_back(safePull(resTanL, varTanL));
+      m_fit_vs_mc.errD0.push_back(errD0);
+      m_fit_vs_mc.errZ0.push_back(errZ0);
+      m_fit_vs_mc.errPhi.push_back(errPhi);
+      m_fit_vs_mc.errOmega.push_back(errOmega);
+      m_fit_vs_mc.errTanL.push_back(errTanL);
       m_fit_vs_mc.p_reco.push_back(reco.p);
       m_fit_vs_mc.p_ref.push_back(refMC.p);
       m_fit_vs_mc.pT_reco.push_back(reco.pT);
@@ -800,13 +896,29 @@ private:
           refP.pT = TrackingValidationHelpers::ptFromState(stPerf, m_Bz.value());
           refP.p = TrackingValidationHelpers::momentumFromState(stPerf, m_Bz.value());
 
+          const float resD0Perf = reco.D0 - refP.D0;
+          const float resZ0Perf = reco.Z0 - refP.Z0;
+          const float resPhiPerf = TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refP.phi);
+          const float resOmegaPerf = reco.omega - refP.omega;
+          const float resTanLPerf = reco.tanLambda - refP.tanLambda;
+
           m_fit_vs_perfect.track_index.push_back(tIdx);
           m_fit_vs_perfect.track_location.push_back(int(stReco->location));
-          m_fit_vs_perfect.resD0.push_back(reco.D0 - refP.D0);
-          m_fit_vs_perfect.resZ0.push_back(reco.Z0 - refP.Z0);
-          m_fit_vs_perfect.resPhi.push_back(TrackingValidationHelpers::wrapDeltaPhi(reco.phi, refP.phi));
-          m_fit_vs_perfect.resOmega.push_back(reco.omega - refP.omega);
-          m_fit_vs_perfect.resTanL.push_back(reco.tanLambda - refP.tanLambda);
+          m_fit_vs_perfect.resD0.push_back(resD0Perf);
+          m_fit_vs_perfect.resZ0.push_back(resZ0Perf);
+          m_fit_vs_perfect.resPhi.push_back(resPhiPerf);
+          m_fit_vs_perfect.resOmega.push_back(resOmegaPerf);
+          m_fit_vs_perfect.resTanL.push_back(resTanLPerf);
+          m_fit_vs_perfect.pullD0.push_back(safePull(resD0Perf, varD0));
+          m_fit_vs_perfect.pullZ0.push_back(safePull(resZ0Perf, varZ0));
+          m_fit_vs_perfect.pullPhi.push_back(safePull(resPhiPerf, varPhi));
+          m_fit_vs_perfect.pullOmega.push_back(safePull(resOmegaPerf, varOmega));
+          m_fit_vs_perfect.pullTanL.push_back(safePull(resTanLPerf, varTanL));
+          m_fit_vs_perfect.errD0.push_back(errD0);
+          m_fit_vs_perfect.errZ0.push_back(errZ0);
+          m_fit_vs_perfect.errPhi.push_back(errPhi);
+          m_fit_vs_perfect.errOmega.push_back(errOmega);
+          m_fit_vs_perfect.errTanL.push_back(errTanL);
           m_fit_vs_perfect.p_reco.push_back(reco.p);
           m_fit_vs_perfect.p_ref.push_back(refP.p);
           m_fit_vs_perfect.pT_reco.push_back(reco.pT);
@@ -819,13 +931,22 @@ private:
           m_fit_vs_perfect.resPhi.push_back(NaN);
           m_fit_vs_perfect.resOmega.push_back(NaN);
           m_fit_vs_perfect.resTanL.push_back(NaN);
+          m_fit_vs_perfect.pullD0.push_back(NaN);
+          m_fit_vs_perfect.pullZ0.push_back(NaN);
+          m_fit_vs_perfect.pullPhi.push_back(NaN);
+          m_fit_vs_perfect.pullOmega.push_back(NaN);
+          m_fit_vs_perfect.pullTanL.push_back(NaN);
+          m_fit_vs_perfect.errD0.push_back(errD0);
+          m_fit_vs_perfect.errZ0.push_back(errZ0);
+          m_fit_vs_perfect.errPhi.push_back(errPhi);
+          m_fit_vs_perfect.errOmega.push_back(errOmega);
+          m_fit_vs_perfect.errTanL.push_back(errTanL);
           m_fit_vs_perfect.p_reco.push_back(reco.p);
           m_fit_vs_perfect.p_ref.push_back(NaN);
           m_fit_vs_perfect.pT_reco.push_back(reco.pT);
           m_fit_vs_perfect.pT_ref.push_back(NaN);
         }
       }
-
       ++tIdx;
     }
 

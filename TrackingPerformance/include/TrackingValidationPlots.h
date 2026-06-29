@@ -22,6 +22,7 @@
 
 #include "TCanvas.h"
 #include "TGraphErrors.h"
+#include "TH1F.h"
 #include "TTree.h"
 
 #include <cstddef>
@@ -59,8 +60,8 @@ double computeEffectiveSigmaBootstrapError(const std::vector<double>& values, do
 TGraphErrors* makeD0ResolutionVsMomentum(TTree* tree, const char* graphName = "g_d0_resolution_vs_p", double pMin = 0.1,
                                          double pMax = 100.0, double logStep = 0.15);
 
-TGraphErrors* makeZ0ResolutionVsMomentum(TTree* tree, const char* graphName = "g_z0_resolution_vs_p",
-                                         double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
+TGraphErrors* makeZ0ResolutionVsMomentum(TTree* tree, const char* graphName = "g_z0_resolution_vs_p", double pMin = 0.1,
+                                         double pMax = 100.0, double logStep = 0.15);
 
 TGraphErrors* makePhiResolutionVsMomentum(TTree* tree, const char* graphName = "g_phi_resolution_vs_p",
                                           double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
@@ -70,8 +71,22 @@ TGraphErrors* makeOmegaResolutionVsMomentum(TTree* tree, const char* graphName =
 
 TGraphErrors* makeTanLambdaResolutionVsMomentum(TTree* tree, const char* graphName = "g_tanlambda_resolution_vs_p",
                                                 double pMin = 0.1, double pMax = 100.0, double logStep = 0.15);
-                                                
-                                        
+
+/**
+ * @brief Build a pull distribution for one track parameter.
+ *
+ * The function reads a pull branch from the fitter validation tree and fills a
+ * histogram. Pulls are normalized residuals, residual divided by the fitted
+ * parameter uncertainty.
+ */
+TH1F* makePullHistogram(TTree* tree, const char* branchName, const char* histName, const char* title, int nBins = 100,
+                        double xMin = -10.0, double xMax = 10.0);
+
+/**
+ * @brief Draw a pull histogram.
+ */
+TCanvas* drawPullCanvas(TH1F* h, const char* canvasName, const char* title);
+
 /**
  * @brief Build the total-momentum resolution as a function of momentum.
  *
@@ -91,7 +106,6 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphNam
  */
 TGraphErrors* makePtResolutionVsMomentum(TTree* tree, const char* graphName = "g_pt_resolution_vs_p", double pMin = 0.1,
                                          double pMax = 100.0, double logStep = 0.15);
-
 
 /// Draw a generic resolution graph on a logarithmic momentum axis
 TCanvas* drawResolutionCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin = 0.1,
