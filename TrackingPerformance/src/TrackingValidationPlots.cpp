@@ -230,7 +230,7 @@ namespace {
       g->SetPointError(ip, 0.0, sigmaErr);
       ++ip;
     }
-
+    tree->ResetBranchAddresses();
     return g;
   }
 } // namespace
@@ -375,7 +375,7 @@ TGraphErrors* makeMomentumResolutionVsMomentum(TTree* tree, const char* graphNam
     g->SetPointError(ip, 0.0, sigmaErr);
     ++ip;
   }
-
+  tree->ResetBranchAddresses();
   return g;
 }
 
@@ -455,7 +455,7 @@ TGraphErrors* makePtResolutionVsMomentum(TTree* tree, const char* graphName, dou
     g->SetPointError(ip, 0.0, sigmaErr);
     ++ip;
   }
-
+  tree->ResetBranchAddresses();
   return g;
 }
 
@@ -569,7 +569,7 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree, const char* graphName,
     g->SetPointError(ip, 0.0, err);
     ++ip;
   }
-
+  finderTree->ResetBranchAddresses();
   return g;
 }
 
