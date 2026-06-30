@@ -55,9 +55,7 @@ gaudi_add_module(${PackageName}
 target_include_directories(${PackageName} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${MarlinUtil_INCLUDE_DIRS}
-  ${DELPHES_INCLUDE_DIRS}
-)
+ )
 
 set_target_properties(${PackageName} PROPERTIES
   PUBLIC_HEADER "${headers}"
