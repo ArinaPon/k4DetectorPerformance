@@ -20,7 +20,7 @@ limitations under the License.
 
 ## Overview
 
-`TrackingValidation` is a validation algorithm for studying the performance (efficiency, purity, residuals, resolutions) of track finding and track fitting in the tracking reconstruction.
+`TrackingValidation` is a validation algorithm for studying the performance (efficiency, purity, residuals, resolutions and pulls) of track finding and track fitting in the tracking reconstruction.
 It is designed to compare reconstructed and fitted tracks with Monte Carlo truth information and, when enabled, with tracks obtained from perfect tracking, i.e. tracks fitted using the correct simHits from the particle truth information. The algorithm writes validation information to a ROOT output file containing TTrees and summary plots that can be used later for performance studies and plotting.
 
 Typical use cases include:
@@ -69,7 +69,7 @@ Typical use cases include:
 
 The algorithm writes a ROOT file specified by `OutputFile`.
 
-The file contains validation TTrees for finder-level and fitter-level studies, together with summary performance plots produced in `finalize()`. The fitter validation trees store residuals of the reconstructed track parameters with respect to the chosen reference.
+The file contains validation TTrees for finder-level and fitter-level studies, together with summary performance plots produced in `finalize()`. The fitter validation trees store the reconstructed and reference track parameters, their residuals, the corresponding parameter uncertainties extracted from the fitted covariance matrix, and the resulting pull values for the five helix parameters.
 
 ### Output content by mode
 
@@ -99,10 +99,15 @@ The flag `DoPerfectFit` controls the handling of the `fitter_vs_perfect` output:
 
 In `finalize()`, the algorithm also writes summary plots to the same ROOT file, including:
 
-- tracking efficiency vs momentum,
-- `d0` resolution vs momentum,
-- momentum resolution vs momentum,
-- transverse-momentum resolution vs momentum.
+- tracking efficiency vs momentum;
+- helix-parameter resolutions (`d0`, `z0`, `phi`, `omega`, `tanLambda`) as a function of momentum;
+- total-momentum resolution vs momentum;
+- transverse-momentum resolution vs momentum;
+- pull distributions for the five helix parameters (`d0`, `z0`, `phi`, `omega`, `tanLambda`).
+
+The pull distributions are computed as
+pull = (reconstructed − reference) / σ
+where σ is taken from the corresponding diagonal element of the fitted track covariance matrix. Gaussian fits are performed for sufficiently populated pull distributions to facilitate validation of the covariance estimates.
 
 Additional plots may be added in future developments.
 ---
