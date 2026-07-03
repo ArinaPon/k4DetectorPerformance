@@ -199,34 +199,34 @@ which is provided through CMake `ExternalData`.
 
 The validation-only CI test uses the following steering configuration:
 
-- `runDigi = false`  
+- `runDigi = false`
   Do not run digitization.
 
-- `runFinder = false`  
+- `runFinder = false`
   Do not run the track finder. Finder tracks are read from the input file.
 
-- `runFitter = false`  
+- `runFitter = false`
   Do not run the track fitter. Fitted tracks are read from the input file.
 
-- `runPerfectTracking = false`  
+- `runPerfectTracking = false`
   Do not run perfect tracking or perfect fitting.
 
-- `runValidation = true`  
+- `runValidation = true`
   Run the validation algorithm.
 
-- `useDCH = false`  
+- `useDCH = false`
   Do not use drift-chamber collections. The CI input is a CLD reconstruction file.
 
-- `mode = 0`  
+- `mode = 0`
   Run full validation, using both finder-level and fitter-level inputs from the pre-produced file.
 
-- `doPerfectFit = false`  
+- `doPerfectFit = false`
   Do not fill the fitter-versus-perfect-track comparison.
 
-- `finderEfficiencyDefinition = 1`  
+- `finderEfficiencyDefinition = 1`
   Use the purity-based tracking-efficiency definition.
 
-- `finderPurityThreshold = 0.75`  
+- `finderPurityThreshold = 0.75`
   Use a purity threshold of 0.75 when `FinderEfficiencyDefinition = 1`.
 
 The CLD collection names are passed explicitly to the steering file:
