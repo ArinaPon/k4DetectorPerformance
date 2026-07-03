@@ -21,10 +21,30 @@ set(PackageName TrackingPerformance)
 
 project(${PackageName})
 
+# ---------------------------------------------------------------------------
+# External test data
+# ---------------------------------------------------------------------------
+#
+# The CI validation test uses a small pre-produced CLD reconstruction file.
+# The ROOT file itself is not committed to the repository. Instead, CMake
+# ExternalData resolves it from the hash file stored in the test directory.
+#
+# Andrea uploaded the data file to:
+#   https://key4hep.web.cern.ch/testFiles/k4DetectorPerformance/<hash>
+#
+# The test accesses it through:
+#   DATA{.../MuGuns_CLD_o3_v01_2026_07_01.root}
+# ---------------------------------------------------------------------------
+
 include(ExternalData)
+
 list(APPEND ExternalData_URL_TEMPLATES
-  "https://key4hep.web.cern.ch:443/testFiles/k4RecTracker/%(hash)"
+  "https://key4hep.web.cern.ch:443/testFiles/k4DetectorPerformance/%(hash)"
 )
+
+# ---------------------------------------------------------------------------
+# Sources and headers
+# ---------------------------------------------------------------------------
 
 file(GLOB sources
   ${PROJECT_SOURCE_DIR}/src/*.cc
@@ -36,7 +56,15 @@ file(GLOB headers
   ${PROJECT_SOURCE_DIR}/include/*.h
 )
 
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
 find_package(ROOT REQUIRED COMPONENTS Core RIO Tree MathCore MathMore Graf Graf3d Hist)
+
+# ---------------------------------------------------------------------------
+# TrackingPerformance module
+# ---------------------------------------------------------------------------
 
 gaudi_add_module(${PackageName}
   SOURCES ${sources}
@@ -55,11 +83,25 @@ gaudi_add_module(${PackageName}
 target_include_directories(${PackageName} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
- )
+)
 
 set_target_properties(${PackageName} PROPERTIES
   PUBLIC_HEADER "${headers}"
 )
+
+# ---------------------------------------------------------------------------
+# Test scripts
+# ---------------------------------------------------------------------------
+#
+# testTrackingValidation.sh:
+#   lightweight CI test
+#   runs only TrackingValidation on a pre-produced CLD reco file
+#
+# testTrackingValidationFullReco.sh:
+#   manual/example script
+#   runs the full IDEA pipeline
+#   intentionally not registered as a CI test
+# ---------------------------------------------------------------------------
 
 file(GLOB test_python_scripts
   ${PROJECT_SOURCE_DIR}/test/*.py
@@ -67,6 +109,7 @@ file(GLOB test_python_scripts
 
 set(test_shell_scripts
   ${PROJECT_SOURCE_DIR}/test/testTrackingValidation.sh
+  ${PROJECT_SOURCE_DIR}/test/testTrackingValidationFullReco.sh
 )
 
 set(test_scripts
@@ -76,26 +119,35 @@ set(test_scripts
 
 file(COPY ${test_scripts} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/test)
 
+# ---------------------------------------------------------------------------
+# Installation
+# ---------------------------------------------------------------------------
+
 install(TARGETS ${PackageName}
   EXPORT ${CMAKE_PROJECT_NAME}Targets
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT bin
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT shlib
   PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${CMAKE_PROJECT_NAME}" COMPONENT dev
 )
-message(STATUS "CMAKE_SOURCE_DIR = ${CMAKE_SOURCE_DIR}")
-message(STATUS "CMAKE_CURRENT_SOURCE_DIR = ${CMAKE_CURRENT_SOURCE_DIR}")
-message(STATUS "PROJECT_SOURCE_DIR = ${PROJECT_SOURCE_DIR}")
+
 install(FILES ${test_scripts} DESTINATION test)
 
-SET(test_name "testTrackingValidation")
+set(test_name "testTrackingValidation")
 
-ExternalData_Add_Test(testTrackingValidation
+ExternalData_Add_Test(
+  k4DetectorPerformanceData
   NAME ${test_name}
-  COMMAND sh +x TrackingPerformance/test/testTrackingValidation.sh
-          DATA{${CMAKE_SOURCE_DIR}/TrackingPerformance/test/inputFiles/SimpleGatrIDEAv3o1.onnx}
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/testTrackingValidation.sh
+          DATA{${CMAKE_CURRENT_SOURCE_DIR}/test/MuGuns_CLD_o3_v01_2026_07_01.root}
 )
 
 set_test_env(${test_name})
-set_tests_properties(${test_name} PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-ExternalData_Add_Target(${test_name})
 
+set_tests_properties(
+  ${test_name}
+  PROPERTIES
+    TIMEOUT 300
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+ExternalData_Add_Target(k4DetectorPerformanceData)

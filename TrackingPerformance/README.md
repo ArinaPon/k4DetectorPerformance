@@ -143,64 +143,101 @@ For more details on the CMS association convention and the related definitions o
 
 ## How to run
 
-`TrackingValidation` is tested through a small end-to-end workflow driven by `ctest`. The test starts from a simulated EDM4hep file, runs the reconstruction and validation steering, and writes the final validation ROOT output.
+`TrackingValidation` is tested through a lightweight `ctest` workflow. The CI test does **not** run the full reconstruction chain. Instead, it starts from a small pre-produced CLD reconstruction file and runs only the validation algorithm.
 
 In the current setup:
 
-- the simulation step is performed with `ddsim` in the shell test,
-- the reconstruction and validation steps are controlled by `runTrackingValidation.py`,
-- the full test is launched through `ctest`.
+- the input CLD reconstruction file is retrieved through CMake `ExternalData`;
+- the validation steering is controlled by `runTrackingValidation.py`;
+- the shell test `testTrackingValidation.sh` runs only `TrackingValidation`;
 
-Run the test from the build directory:
+### Running the CI test
+
+From the build directory run the validation test:
 
 ```bash
-cd k4DetectorPerformance/build
 ctest -V -R testTrackingValidation
 ```
 
-The validation output is written to:
+The test writes the validation output file to the test working directory, which is the build directory configured by CMake. The output file is named:
 
 ```text
-k4DetectorPerformance/TrackingPerformance/test/validation_output_test.root
+validation.root
 ```
-### Test configuration and steering options
 
-The current test runs the full reconstruction and validation chain with the following settings:
+### CI test workflow
 
-- `TRACKINGPERF_RUN_SIM = 1`
-  Simulation step in the shell test (`false` = skip simulation and use an existing EDM4hep input file via `TRACKINGPERF_INPUT_FILE_OVERRIDE`, `true` = run simulation with `ddsim`).
+The registered CI test runs the following reduced workflow:
 
-- `runDigi = true`
-  Run digitization.
+```text
+pre-produced CLD reco file → TrackingValidation → validation.root
+```
 
-- `runFinder = true`
-  Run track finding.
+It intentionally does **not** run:
 
-- `runFitter = true`
-  Run track fitting.
+- DDSim;
+- digitization;
+- track finding;
+- track fitting;
+- perfect tracking.
 
-- `runPerfectTracking = true`
-  Run perfect tracking and perfect fitting.
+The test uses the CLD geometry file from `k4geo`:
 
-- `runValidation = true`
+```text
+${K4GEO}/FCCee/CLD/compact/CLD_o3_v01/CLD_o3_v01.xml
+```
+
+and the pre-produced input file:
+
+```text
+MuGuns_CLD_o3_v01_2026_07_01.root
+```
+
+which is provided through CMake `ExternalData`.
+
+### CI test configuration
+
+The validation-only CI test uses the following steering configuration:
+
+- `runDigi = false`  
+  Do not run digitization.
+
+- `runFinder = false`  
+  Do not run the track finder. Finder tracks are read from the input file.
+
+- `runFitter = false`  
+  Do not run the track fitter. Fitted tracks are read from the input file.
+
+- `runPerfectTracking = false`  
+  Do not run perfect tracking or perfect fitting.
+
+- `runValidation = true`  
   Run the validation algorithm.
 
-- `useDCH = true`
-  Include drift-chamber collections.
+- `useDCH = false`  
+  Do not use drift-chamber collections. The CI input is a CLD reconstruction file.
 
-- `mode = 0`
-  Validation mode (`0` = full validation, `1` = finder-only validation, `2` = fitter-only validation).
+- `mode = 0`  
+  Run full validation, using both finder-level and fitter-level inputs from the pre-produced file.
 
-- `doPerfectFit = true`
-  Enable fitter-versus-perfect-track comparisons.
+- `doPerfectFit = false`  
+  Do not fill the fitter-versus-perfect-track comparison.
 
-- `finderEfficiencyDefinition = 1`
-  Tracking-efficiency definition (`1` = purity-based definition, `2` = purity >= 0.5 and efficiency >= 0.5).
+- `finderEfficiencyDefinition = 1`  
+  Use the purity-based tracking-efficiency definition.
 
-- `finderPurityThreshold = 0.75`
-  Purity threshold used when `FinderEfficiencyDefinition = 1`.
+- `finderPurityThreshold = 0.75`  
+  Use a purity threshold of 0.75 when `FinderEfficiencyDefinition = 1`.
+
+The CLD collection names are passed explicitly to the steering file:
+
+```text
+mcParticles  = MCPhysicsParticles
+hitSimLinks  = VXDTrackerHitRelations
+finderTracks = SiTracks
+fittedTracks = FittedTracks
+```
 
 The boolean steering options accept both `true/false` and `1/0` inputs.
 
-These command-line flags are defined in `runTrackingValidation.py`, which allows the same steering file to be used either for the full chain or for reduced workflows in which some reconstruction steps are skipped and only the validation is run.
 
