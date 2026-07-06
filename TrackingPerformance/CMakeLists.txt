@@ -40,6 +40,7 @@ include(ExternalData)
 
 list(APPEND ExternalData_URL_TEMPLATES
   "https://key4hep.web.cern.ch:443/testFiles/k4DetectorPerformance/%(hash)"
+  "https://key4hep.web.cern.ch:443/testFiles/k4DetectorPerformance/MuGuns_CLD_o3_v01_2026_07_01.root"
 )
 
 # ---------------------------------------------------------------------------
