@@ -25,11 +25,6 @@ project(${PackageName})
 # External test data
 # ---------------------------------------------------------------------------
 #
-# The CI validation test uses a small pre-produced CLD reconstruction file.
-# The ROOT file itself is not committed to the repository. Instead, CMake
-# ExternalData resolves it from the hash file stored in the test directory.
-#
-# Andrea uploaded the data file to:
 #   https://key4hep.web.cern.ch/testFiles/k4DetectorPerformance/<hash>
 #
 # The test accesses it through:
