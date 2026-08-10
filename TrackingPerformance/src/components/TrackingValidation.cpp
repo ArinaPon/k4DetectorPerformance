@@ -39,6 +39,7 @@
 #include "TFile.h"
 #include "TGraphErrors.h"
 #include "TTree.h"
+#include "TH1F.h"
 
 // STL
 #include <algorithm>
@@ -157,34 +158,108 @@ struct TrackingValidation final
     }
 
     // ---------- Build truth maps: hit -> particle, particle -> hits ----------
+    //
+    // A digitized hit can be linked to multiple simulated hits and therefore
+    // potentially to multiple MC particles. First accumulate the simulated
+    // energy deposit per MC particle for each digitized hit. Then assign each
+    // digitized hit to exactly one dominant MC particle.
+    //
+    // Both maps are built from the same selected association:
+    //   hitToParticle   : digitized hit -> dominant MC particle
+    //   hitsPerParticle : dominant MC particle -> digitized hits
+    //
+    // This avoids order-dependent overwriting and prevents the same digitized
+    // hit from being counted for several MC particles.
+
     std::unordered_map<int, std::vector<podio::ObjectID>> hitsPerParticle;
     hitsPerParticle.reserve(mcParts.size());
 
     std::unordered_map<podio::ObjectID, int> hitToParticle;
     hitToParticle.reserve(200000);
 
-    // digi-to-sim links
+    // For each digitized hit, store the summed simulated energy deposit
+    // contributed by each MC particle.
+    std::unordered_map<podio::ObjectID, std::unordered_map<int, double>> contributionsPerHit;
+    contributionsPerHit.reserve(200000);
+
+    // ---------- Accumulate digi-to-sim contributions ----------
     for (const auto* links : linkCollections) {
       if (!links)
         continue;
+
       for (const auto& link : *links) {
         const auto digi = link.getFrom();
         const auto sim = link.getTo();
+
+        if (!digi.isAvailable() || !sim.isAvailable())
+          continue;
+
         const auto mc = sim.getParticle();
-        if (!digi.isAvailable() || !mc.isAvailable())
+        if (!mc.isAvailable())
           continue;
 
         const int pid = mc.getObjectID().index;
+        if (pid < 0 || pid >= static_cast<int>(mcParts.size()))
+          continue;
+
         const auto key = digi.getObjectID();
-        hitsPerParticle[pid].push_back(key);
-        hitToParticle[key] = pid;
+
+        const double eDep = static_cast<double>(sim.getEDep());
+        const double contribution = (std::isfinite(eDep) && eDep > 0.0) ? eDep : 0.0;
+
+        contributionsPerHit[key][pid] += contribution;
       }
     }
 
+    // ---------- Select one dominant MC particle per digitized hit ----------
+    for (const auto& [hitKey, particleContributions] : contributionsPerHit) {
+      int bestPid = -1;
+      double bestContribution = -std::numeric_limits<double>::infinity();
+
+      for (const auto& [pid, contribution] : particleContributions) {
+        const bool hasLargerContribution = contribution > bestContribution;
+
+        // Use the smaller particle index as a deterministic tie-breaker.
+        const bool winsTie =
+            contribution == bestContribution && (bestPid < 0 || pid < bestPid);
+
+        if (hasLargerContribution || winsTie) {
+          bestPid = pid;
+          bestContribution = contribution;
+        }
+      }
+
+      if (bestPid < 0)
+        continue;
+
+      hitToParticle[hitKey] = bestPid;
+      hitsPerParticle[bestPid].push_back(hitKey);
+    }
+// ---------- Compute MC-particle angular separation ----------
+    std::vector<int> deltaMCCandidates;
+    deltaMCCandidates.reserve(hitsPerParticle.size());
+
+    for (int i = 0; i < static_cast<int>(mcParts.size()); ++i) {
+      const auto& mc = mcParts[i];
+
+      if (mc.getGeneratorStatus() != 1)
+        continue;
+
+      const auto it = hitsPerParticle.find(i);
+      if (it == hitsPerParticle.end() || it->second.empty())
+        continue;
+
+      deltaMCCandidates.push_back(i);
+    }
+
+    const auto deltaMC =
+        TrackingValidationHelpers::computeDeltaMC(
+            mcParts, deltaMCCandidates);
+
     // ---------- Finder & Perfect association trees ----------
     if ((mode == 0 || mode == 1) && finderTracks) {
-      fillPerfectAssoc(event, mcParts, hitsPerParticle);
-      fillFinderAssoc(event, mcParts, *finderTracks, hitToParticle, hitsPerParticle);
+      fillPerfectAssoc(event, mcParts, hitsPerParticle, deltaMC);
+      fillFinderAssoc(event, mcParts, *finderTracks, hitToParticle, hitsPerParticle, deltaMC);
     }
 
     // ---------- Build pid -> best perfect-fitted AtIP state ----------
@@ -364,17 +439,107 @@ struct TrackingValidation final
       }
 
       // finder summary plot
-      TGraphErrors* g_eff_vs_p = TrackingValidationPlots::makeEfficiencyVsMomentum(
-          m_finder_p2t.tree, "g_efficiency_vs_p", m_finderEfficiencyDefinition.value(), m_finderPurityThreshold.value(),
-          0.1, 100.0, 0.15);
+    TGraphErrors* g_eff_vs_p =
+    TrackingValidationPlots::makeEfficiencyVsMomentum(
+        m_finder_p2t.tree,
+        "g_efficiency_vs_p",
+        m_finderEfficiencyDefinition.value(),
+        m_finderPurityThreshold.value(),
+        0.1, 100.0, 0.15);
+
       if (g_eff_vs_p) {
-        TCanvas* c_eff_vs_p = TrackingValidationPlots::drawEfficiencyCanvas(
-            g_eff_vs_p, "c_efficiency_vs_p", "tracking efficiency vs momentum;p [GeV];Efficiency", 0.1, 100.0);
+        TCanvas* c_eff_vs_p =
+            TrackingValidationPlots::drawEfficiencyCanvas(
+                g_eff_vs_p,
+                "c_efficiency_vs_p",
+                "tracking efficiency vs momentum;p [GeV];Efficiency",
+                0.1, 100.0);
+
         g_eff_vs_p->Write();
+
         if (c_eff_vs_p)
           c_eff_vs_p->Write();
       }
 
+      // configure cuts for efficiency versus vertex R
+      TrackingValidationPlots::EfficiencyVsVertexRCuts vertexRCuts;
+
+      vertexRCuts.applyPtCut = m_applyVertexRPtCut.value();
+      vertexRCuts.minPt = m_vertexRMinPt.value();
+
+      vertexRCuts.applyThetaCut = m_applyVertexRThetaCut.value();
+
+      constexpr float pi = 3.14159265358979323846f;
+      vertexRCuts.minTheta =
+          m_vertexRMinThetaDeg.value() * pi / 180.f;
+      vertexRCuts.maxTheta =
+          m_vertexRMaxThetaDeg.value() * pi / 180.f;
+
+      vertexRCuts.applyDeltaMCCut =
+          m_applyVertexRDeltaMCCut.value();
+      vertexRCuts.minDeltaMC =
+          m_vertexRMinDeltaMC.value();
+
+      vertexRCuts.applyVertexZCut =
+          m_applyVertexRVertexZCut.value();
+      vertexRCuts.maxAbsVertexZ =
+          m_vertexRMaxAbsVertexZ.value();
+
+      // create the efficiency-versus-displacement plot
+      if (m_makeEfficiencyVsVertexR.value() &&
+    (m_mode.value() == 0 || m_mode.value() == 1)) {
+        TGraphErrors* g_eff_vs_vertexR =
+            TrackingValidationPlots::makeEfficiencyVsVertexR(
+                m_finder_p2t.tree,
+                "g_efficiency_vs_vertexR",
+                m_finderEfficiencyDefinition.value(),
+                m_finderPurityThreshold.value(),
+                vertexRCuts,
+                0.0, 1000.0, 25.0);
+
+        if (g_eff_vs_vertexR) {
+          TCanvas* c_eff_vs_vertexR =
+              TrackingValidationPlots::drawEfficiencyCanvas(
+                  g_eff_vs_vertexR,
+                  "c_efficiency_vs_vertexR",
+                  "tracking efficiency vs production radius;"
+                  "vertex R [mm];Efficiency",
+                  0.0, 1000.0, false);
+
+          g_eff_vs_vertexR->Write();
+
+          if (c_eff_vs_vertexR)
+            c_eff_vs_vertexR->Write();
+        }
+      }
+
+      // Reduced chi2 distribution for MC-associated fitted tracks.
+      // This evaluates the consistency of the fitted trajectory with its
+      // associated measurements, normalized by the number of fit degrees
+      // of freedom.
+
+    TH1F* h_chi2_ndf =
+    TrackingValidationPlots::makeValueHistogram(
+        m_fit_vs_mc.tree,
+        "chi2Ndf",
+        "h_chi2_ndf",
+        "Track-fit #chi^{2}/ndf;#chi^{2}/ndf;Entries",
+        100,
+        0.0,
+        10.0);
+
+    if (h_chi2_ndf) {
+      TCanvas* c_chi2_ndf =
+          TrackingValidationPlots::drawHistogramCanvas(
+              h_chi2_ndf,
+              "c_chi2_ndf",
+              "Track-fit #chi^{2}/ndf;#chi^{2}/ndf;Entries");
+
+      h_chi2_ndf->Write();
+
+      if (c_chi2_ndf)
+        c_chi2_ndf->Write();
+}
       m_outFile->Close();
     }
     return StatusCode::SUCCESS;
@@ -411,6 +576,45 @@ private:
   Gaudi::Property<bool> m_doPerfectFit{this, "DoPerfectFit", false,
                                        "If true: fill fitter_vs_perfect using PerfectFitted_tracks if available. "
                                        "If false: tree exists but is empty per event."};
+  Gaudi::Property<bool> m_makeEfficiencyVsVertexR{
+    this, "MakeEfficiencyVsVertexR", true,
+    "Produce the tracking-efficiency-versus-production-radius plot"};
+
+  Gaudi::Property<bool> m_applyVertexRPtCut{
+      this, "VertexREfficiencyApplyPtCut", false,
+      "Apply the pT selection to the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<float> m_vertexRMinPt{
+      this, "VertexREfficiencyMinPt", 1.f,
+      "Minimum MC-particle pT [GeV] for the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<bool> m_applyVertexRThetaCut{
+      this, "VertexREfficiencyApplyThetaCut", false,
+      "Apply the theta selection to the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<float> m_vertexRMinThetaDeg{
+      this, "VertexREfficiencyMinThetaDeg", 10.f,
+      "Minimum MC-particle theta [deg] for the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<float> m_vertexRMaxThetaDeg{
+      this, "VertexREfficiencyMaxThetaDeg", 170.f,
+      "Maximum MC-particle theta [deg] for the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<bool> m_applyVertexRDeltaMCCut{
+      this, "VertexREfficiencyApplyDeltaMCCut", false,
+      "Apply the deltaMC selection to the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<float> m_vertexRMinDeltaMC{
+      this, "VertexREfficiencyMinDeltaMC", 0.02f,
+      "Minimum deltaMC for the efficiency-versus-vertex-R plot"};
+
+  Gaudi::Property<bool> m_applyVertexRVertexZCut{
+      this, "VertexREfficiencyApplyVertexZCut", false,
+      "Apply an absolute production-vertex-z selection"};
+
+  Gaudi::Property<float> m_vertexRMaxAbsVertexZ{
+      this, "VertexREfficiencyMaxAbsVertexZ", 30.f,
+      "Maximum absolute production vertex z [mm]"};
 
   // ---------- output structs ----------
   struct AssocTree {
@@ -429,6 +633,7 @@ private:
     std::vector<float> vertexZ; // production vertex z [mm]
     std::vector<float> charge;
     std::vector<int> pdg;
+    std::vector<float> deltaMC;
 
     std::vector<int> nTrueHits;
     std::vector<std::vector<int>> assoc;
@@ -448,6 +653,7 @@ private:
       vertexZ.clear();
       charge.clear();
       pdg.clear();
+      deltaMC.clear();
 
       nTrueHits.clear();
       assoc.clear();
@@ -469,6 +675,9 @@ private:
     std::vector<float> errD0, errZ0, errPhi, errOmega, errTanL;
     std::vector<float> p_reco, p_ref;
     std::vector<float> pT_reco, pT_ref;
+    std::vector<float> chi2;
+    std::vector<int> ndf;
+    std::vector<float> chi2Ndf;
 
     void clear() {
       track_index.clear();
@@ -492,6 +701,9 @@ private:
       p_ref.clear();
       pT_reco.clear();
       pT_ref.clear();
+      chi2.clear();
+      ndf.clear();
+      chi2Ndf.clear();
     }
   };
 
@@ -506,6 +718,7 @@ private:
     t.tree->Branch("vertexZ", &t.vertexZ);
     t.tree->Branch("charge", &t.charge);
     t.tree->Branch("pdg", &t.pdg);
+    t.tree->Branch("deltaMC", &t.deltaMC);
     t.tree->Branch("nTrueHits", &t.nTrueHits);
     t.tree->Branch("assoc", &t.assoc);
     t.tree->Branch("sharedHits", &t.sharedHits);
@@ -537,11 +750,15 @@ private:
     t.tree->Branch("p_ref", &t.p_ref);
     t.tree->Branch("pT_reco", &t.pT_reco);
     t.tree->Branch("pT_ref", &t.pT_ref);
+    t.tree->Branch("chi2", &t.chi2);
+    t.tree->Branch("ndf", &t.ndf);
+    t.tree->Branch("chi2Ndf", &t.chi2Ndf);
   }
 
   // ---------- association trees ----------
   void fillPerfectAssoc(int event, const edm4hep::MCParticleCollection& mcParts,
-                        const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle) const {
+                        const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle,
+                        const std::vector<float>& deltaMC) const {
 
     m_perf_p2t.clear();
     m_perf_t2p.clear();
@@ -581,6 +798,7 @@ private:
       m_perf_p2t.charge.push_back(charge);
       m_perf_p2t.pdg.push_back(pdg);
       m_perf_p2t.nTrueHits.push_back(nHits);
+      m_perf_p2t.deltaMC.push_back(deltaMC[i]);
       m_perf_p2t.assoc.push_back({i});
       m_perf_p2t.sharedHits.push_back({});
       m_perf_p2t.matchEfficiency.push_back({});
@@ -595,6 +813,7 @@ private:
       m_perf_t2p.charge.push_back(charge);
       m_perf_t2p.pdg.push_back(pdg);
       m_perf_t2p.nTrueHits.push_back(nHits);
+      m_perf_t2p.deltaMC.push_back(deltaMC[i]);
       m_perf_t2p.assoc.push_back({i});
       m_perf_t2p.sharedHits.push_back({});
       m_perf_t2p.matchEfficiency.push_back({});
@@ -610,7 +829,8 @@ private:
   void fillFinderAssoc(int event, const edm4hep::MCParticleCollection& mcParts,
                        const edm4hep::TrackCollection& finderTracks,
                        const std::unordered_map<podio::ObjectID, int>& hitToParticle,
-                       const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle) const {
+                       const std::unordered_map<int, std::vector<podio::ObjectID>>& hitsPerParticle,
+                       const std::vector<float>& deltaMC) const {
 
     m_finder_p2t.clear();
     m_finder_t2p.clear();
@@ -645,6 +865,7 @@ private:
       m_finder_t2p.vertexZ.push_back(-1.f);
       m_finder_t2p.charge.push_back(0.f);
       m_finder_t2p.pdg.push_back(0);
+      m_finder_t2p.deltaMC.push_back(-1.f);
       m_finder_t2p.nTrueHits.push_back(trackNHits[t]);
 
       std::vector<int> parts;
@@ -675,7 +896,7 @@ private:
       m_finder_t2p.matchEfficiency.push_back(effs);
       m_finder_t2p.matchPurity.push_back(purs);
     }
-
+  
     // particle -> tracks
     for (int p = 0; p < (int)mcParts.size(); ++p) {
       const auto& mc = mcParts[p];
@@ -731,6 +952,7 @@ private:
       m_finder_p2t.vertexZ.push_back(vertexZ);
       m_finder_p2t.charge.push_back(charge);
       m_finder_p2t.pdg.push_back(pdg);
+      m_finder_p2t.deltaMC.push_back(deltaMC[p]);
       m_finder_p2t.nTrueHits.push_back(nParticleHits);
       m_finder_p2t.assoc.push_back(tracks);
       m_finder_p2t.sharedHits.push_back(sh);
@@ -832,9 +1054,21 @@ private:
       reco.pT = TrackingValidationHelpers::ptFromState(*stReco, m_Bz.value());
       reco.p = TrackingValidationHelpers::momentumFromState(*stReco, m_Bz.value());
 
-      // ref from MC using the SAME convention as fitter (PCA + phi0 + ZPCA + omega=a*B/pT)
-      const TrackingValidationHelpers::HelixParams refMC = TrackingValidationHelpers::truthFromMC_GenfitConvention(
+      // Build the MC truth helix parameters at the same reference point
+      // and using the same parameter convention as the fitted track state.
+      const TrackingValidationHelpers::HelixParams refMC = TrackingValidationHelpers::truthHelixParamsFromMC(
           mc, m_Bz.value(), m_refX.value(), m_refY.value(), m_refZ.value());
+
+      // Fit-quality quantities reported by the reconstructed track.
+      // Reduced chi2 is defined only for a finite, non-negative chi2
+      // and a positive number of degrees of freedom.
+      const float chi2 = static_cast<float>(trk.getChi2());
+      const int ndf = trk.getNdf();
+
+      const float chi2Ndf =
+          (std::isfinite(chi2) && chi2 >= 0.f && ndf > 0)
+              ? chi2 / static_cast<float>(ndf)
+              : std::numeric_limits<float>::quiet_NaN();
 
       // Track-parameter uncertainties from the fitted-state covariance matrix
 
@@ -880,6 +1114,9 @@ private:
       m_fit_vs_mc.p_ref.push_back(refMC.p);
       m_fit_vs_mc.pT_reco.push_back(reco.pT);
       m_fit_vs_mc.pT_ref.push_back(refMC.pT);
+      m_fit_vs_mc.chi2.push_back(chi2);
+      m_fit_vs_mc.ndf.push_back(ndf);
+      m_fit_vs_mc.chi2Ndf.push_back(chi2Ndf);
 
       // --- vs perfect-fitted ---
       if (doPerfect) {
@@ -923,6 +1160,9 @@ private:
           m_fit_vs_perfect.p_ref.push_back(refP.p);
           m_fit_vs_perfect.pT_reco.push_back(reco.pT);
           m_fit_vs_perfect.pT_ref.push_back(refP.pT);
+          m_fit_vs_perfect.chi2.push_back(chi2);
+          m_fit_vs_perfect.ndf.push_back(ndf);
+          m_fit_vs_perfect.chi2Ndf.push_back(chi2Ndf);
         } else {
           m_fit_vs_perfect.track_index.push_back(tIdx);
           m_fit_vs_perfect.track_location.push_back(int(stReco->location));
@@ -945,6 +1185,9 @@ private:
           m_fit_vs_perfect.p_ref.push_back(NaN);
           m_fit_vs_perfect.pT_reco.push_back(reco.pT);
           m_fit_vs_perfect.pT_ref.push_back(NaN);
+          m_fit_vs_perfect.chi2.push_back(chi2);
+          m_fit_vs_perfect.ndf.push_back(ndf);
+          m_fit_vs_perfect.chi2Ndf.push_back(chi2Ndf);
         }
       }
       ++tIdx;

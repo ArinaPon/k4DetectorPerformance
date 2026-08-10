@@ -21,19 +21,26 @@
 
 #include <cmath>
 #include <limits>
+#include <algorithm>
 
 namespace TrackingValidationHelpers {
 
-// Constants matching the fitter code
+// Conversion constant for pT in GeV, B in T, and curvature in mm^-1.
 static constexpr float c_mm_s = 2.998e11f;
-static constexpr float a_genfit = 1e-15f * c_mm_s;
+static constexpr float kBFieldToCurvature = 1e-15f * c_mm_s;
 
 float wrapDeltaPhi(float a, float b) {
+  constexpr float pi = 3.14159265358979323846f;
+  constexpr float twoPi = 2.f * pi;
+
   float d = a - b;
-  while (d > M_PI)
-    d -= 2.f * M_PI;
-  while (d < -M_PI)
-    d += 2.f * M_PI;
+
+  while (d > pi)
+    d -= twoPi;
+
+  while (d < -pi)
+    d += twoPi;
+
   return d;
 }
 
@@ -44,12 +51,15 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z, float px, float py, float pz
   const float pt = std::sqrt(px * px + py * py);
   if (pt == 0.f)
     return out;
+
   if (chargeSign == 0)
-    chargeSign = 1;
-  if (Bz == 0.f)
     return out;
 
-  const float R = pt / (0.3f * std::abs(chargeSign) * Bz) * 1000.f;
+  // This helper currently assumes that Bz is supplied as a positive magnitude.
+  if (Bz <= 0.f)
+    return out;
+
+  const float R = pt / (kBFieldToCurvature * Bz);
 
   const float tx = px / pt;
   const float ty = py / pt;
@@ -76,8 +86,10 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z, float px, float py, float pz
   const float ry = pcaY - yc;
 
   const int sign = (chargeSign > 0) ? 1 : -1;
-  float tanX = -sign * ry;
-  float tanY = sign * rx;
+
+  // Tangent at the PCA, oriented along the particle momentum.
+  float tanX = sign * ry;
+  float tanY = -sign * rx;
 
   const float tnorm = std::sqrt(tanX * tanX + tanY * tanY);
   if (tnorm == 0.f)
@@ -88,17 +100,18 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z, float px, float py, float pz
 
   const float phi0 = std::atan2(tanY, tanX);
 
-  const float pR = pt;
-  const float pZ = pz;
-  const float R0 = std::sqrt(x * x + y * y);
-  const float Z0 = z;
+  // Signed transverse arc length from the production point to the PCA.
+  const float startRx = x - xc;
+  const float startRy = y - yc;
 
-  const float denom = (pR * pR + pZ * pZ);
-  if (denom == 0.f)
-    return out;
+  const float cross = startRx * ry - startRy * rx;
+  const float dot = startRx * rx + startRy * ry;
+  const float deltaAlpha = std::atan2(cross, dot);
 
-  const float tPCA = -(R0 * pR + Z0 * pZ) / denom;
-  const float ZPCA = Z0 + pZ * tPCA;
+  const float signedArcLength = -sign * R * deltaAlpha;
+
+  // Propagate z consistently along the helix.
+  const float ZPCA = z + signedArcLength * pz / pt;
 
   out.pcaX = pcaX;
   out.pcaY = pcaY;
@@ -108,7 +121,7 @@ PCAInfoHelper PCAInfo_mm(float x, float y, float z, float px, float py, float pz
   return out;
 }
 
-HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc, float Bz, float refX, float refY, float refZ) {
+HelixParams truthHelixParamsFromMC(const edm4hep::MCParticle& mc, float Bz, float refX, float refY, float refZ) {
   HelixParams hp;
 
   const auto& mom = mc.getMomentum();
@@ -122,8 +135,10 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc, float Bz
   hp.pT = pT;
   hp.p = p;
 
-  int qSign = 1;
-  if (mc.getCharge() < 0.f)
+  int qSign = 0;
+  if (mc.getCharge() > 0.f)
+    qSign = 1;
+  else if (mc.getCharge() < 0.f)
     qSign = -1;
 
   const auto& v = mc.getVertex();
@@ -142,14 +157,96 @@ HelixParams truthFromMC_GenfitConvention(const edm4hep::MCParticle& mc, float Bz
     return hp;
   }
 
-  hp.D0 = ((-(refX - info.pcaX)) * std::sin(info.phi0) + (refY - info.pcaY) * std::cos(info.phi0));
-  hp.Z0 = (info.pcaZ - refZ);
-  hp.phi = std::atan2(py, px);
+  const float dx = info.pcaX - refX;
+  const float dy = info.pcaY - refY;
+
+  hp.D0 = dx * std::sin(info.phi0) - dy * std::cos(info.phi0);
+  hp.Z0 = info.pcaZ - refZ;
+  hp.phi = info.phi0;
   hp.tanLambda = (pT > 0.f) ? (pz / pT) : 0.f;
-  hp.omega = (pT > 0.f) ? (std::abs(a_genfit * Bz / pT) * float(qSign)) : 0.f;
+  hp.omega = (pT > 0.f) ? (kBFieldToCurvature * Bz / pT * float(qSign)) : 0.f;
 
   return hp;
 }
+
+std::vector<float> computeDeltaMC(
+    const edm4hep::MCParticleCollection& mcParts,
+    const std::vector<int>& particleIndices) {
+
+  const float NaN = std::numeric_limits<float>::quiet_NaN();
+  const float infinity = std::numeric_limits<float>::infinity();
+
+  // These vectors use the same indexing as mcParts.
+  std::vector<float> eta(mcParts.size(), NaN);
+  std::vector<float> phi(mcParts.size(), NaN);
+  std::vector<float> deltaMC(mcParts.size(), NaN);
+
+  std::vector<int> validIndices;
+  validIndices.reserve(particleIndices.size());
+
+  // Compute eta and phi for the requested MC particles.
+  for (const int index : particleIndices) {
+    if (index < 0 ||
+        index >= static_cast<int>(mcParts.size())) {
+      continue;
+    }
+
+    const auto& momentum = mcParts[index].getMomentum();
+
+    const float px = static_cast<float>(momentum.x);
+    const float py = static_cast<float>(momentum.y);
+    const float pz = static_cast<float>(momentum.z);
+
+    const float pT = std::hypot(px, py);
+
+    if (!std::isfinite(pT) || !(pT > 0.f)) {
+      continue;
+    }
+
+    eta[index] = std::asinh(pz / pT);
+    phi[index] = std::atan2(py, px);
+
+    // A valid particle starts with no finite neighbour.
+    deltaMC[index] = infinity;
+    validIndices.push_back(index);
+  }
+
+  // Calculate each pair only once and update both particles.
+  for (std::size_t i = 0; i < validIndices.size(); ++i) {
+    const int first = validIndices[i];
+
+    for (std::size_t j = i + 1;
+         j < validIndices.size();
+         ++j) {
+      const int second = validIndices[j];
+
+      // Protect against repeated indices in particleIndices.
+      if (first == second) {
+        continue;
+      }
+
+      const float deltaEta = eta[first] - eta[second];
+      const float deltaPhi =
+          wrapDeltaPhi(phi[first], phi[second]);
+
+      const float deltaR =
+          std::hypot(deltaEta, deltaPhi);
+
+      if (!std::isfinite(deltaR)) {
+        continue;
+      }
+
+      deltaMC[first] =
+          std::min(deltaMC[first], deltaR);
+
+      deltaMC[second] =
+          std::min(deltaMC[second], deltaR);
+    }
+  }
+
+  return deltaMC;
+}
+
 
 std::optional<edm4hep::TrackState> getAtIPState(const edm4hep::Track& trk) {
   for (const auto& st : trk.getTrackStates()) {
@@ -164,7 +261,7 @@ float ptFromState(const edm4hep::TrackState& st, float Bz) {
   const float omega = std::abs(float(st.omega));
   if (omega == 0.f)
     return 0.f;
-  return a_genfit * std::abs(Bz) / omega;
+  return kBFieldToCurvature * std::abs(Bz) / omega;
 }
 
 float momentumFromState(const edm4hep::TrackState& st, float Bz) {

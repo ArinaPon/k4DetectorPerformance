@@ -108,7 +108,6 @@ In `finalize()`, the algorithm also writes summary plots to the same ROOT file, 
 The pull distributions are computed as
 pull = (reconstructed − reference) / σ
 where σ is taken from the corresponding diagonal element of the fitted track covariance matrix. Gaussian fits are performed for sufficiently populated pull distributions to facilitate validation of the covariance estimates.
-
 Additional plots may be added in future developments.
 ---
 

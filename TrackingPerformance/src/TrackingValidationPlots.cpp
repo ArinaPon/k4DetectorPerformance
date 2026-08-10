@@ -573,14 +573,242 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree, const char* graphName,
   return g;
 }
 
-TCanvas* drawEfficiencyCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin, double xMax) {
+TGraphErrors* makeEfficiencyVsVertexR(
+    TTree* tree, const char* graphName,
+    int efficiencyDefinition, float purityThreshold,
+    const EfficiencyVsVertexRCuts& cuts,
+    double minR, double maxR, double binWidth) {
+
+  if (!tree || !graphName) {
+    return nullptr;
+  }
+
+  if (maxR <= minR || binWidth <= 0.0) {
+    return nullptr;
+  }
+
+  if (efficiencyDefinition != 1 && efficiencyDefinition != 2) {
+    return nullptr;
+  }
+
+  // Check that the required branches exist.
+  const std::vector<const char*> requiredBranches = {
+      "vertexR",
+      "vertexZ",
+      "pT",
+      "theta",
+      "deltaMC",
+      "matchEfficiency",
+      "matchPurity",
+  };
+
+  for (const char* branchName : requiredBranches) {
+    if (!tree->GetBranch(branchName)) {
+      return nullptr;
+    }
+  }
+
+  // Branch objects. Each tree entry corresponds to one event.
+  // Each vector element corresponds to one selected MC particle.
+  std::vector<float>* vertexR = nullptr;
+  std::vector<float>* vertexZ = nullptr;
+  std::vector<float>* pT = nullptr;
+  std::vector<float>* theta = nullptr;
+  std::vector<float>* deltaMC = nullptr;
+
+  std::vector<std::vector<float>>* matchEfficiency = nullptr;
+  std::vector<std::vector<float>>* matchPurity = nullptr;
+
+  tree->SetBranchAddress("vertexR", &vertexR);
+  tree->SetBranchAddress("vertexZ", &vertexZ);
+  tree->SetBranchAddress("pT", &pT);
+  tree->SetBranchAddress("theta", &theta);
+  tree->SetBranchAddress("deltaMC", &deltaMC);
+  tree->SetBranchAddress("matchEfficiency", &matchEfficiency);
+  tree->SetBranchAddress("matchPurity", &matchPurity);
+
+  const int nBins =
+      static_cast<int>(std::ceil((maxR - minR) / binWidth));
+
+  std::vector<int> denominator(nBins, 0);
+  std::vector<int> numerator(nBins, 0);
+
+  const Long64_t nEntries = tree->GetEntries();
+
+  // Loop over events.
+  for (Long64_t entry = 0; entry < nEntries; ++entry) {
+    tree->GetEntry(entry);
+
+    if (!vertexR || !vertexZ || !pT || !theta || !deltaMC ||
+        !matchEfficiency || !matchPurity) {
+      continue;
+    }
+
+    // All these vectors should have one element per stored MC particle.
+    const std::size_t nParticles = std::min(
+        {vertexR->size(),
+         vertexZ->size(),
+         pT->size(),
+         theta->size(),
+         deltaMC->size(),
+         matchEfficiency->size(),
+         matchPurity->size()});
+
+    // Loop over particles in the event.
+    for (std::size_t i = 0; i < nParticles; ++i) {
+      const float radius = vertexR->at(i);
+
+      if (!std::isfinite(radius)) {
+        continue;
+      }
+
+      // Keep the plotting interval [minR, maxR).
+      if (radius < minR || radius >= maxR) {
+        continue;
+      }
+
+      // ---------- Optional denominator cuts ----------
+      bool passesCuts = true;
+
+      // Reference condition: pT > minimum.
+      if (cuts.applyPtCut) {
+        if (!std::isfinite(pT->at(i)) ||
+            pT->at(i) <= cuts.minPt) {
+          passesCuts = false;
+        }
+      }
+
+      // Reference condition: minimum < theta < maximum.
+      if (cuts.applyThetaCut) {
+        if (!std::isfinite(theta->at(i)) ||
+            theta->at(i) <= cuts.minTheta ||
+            theta->at(i) >= cuts.maxTheta) {
+          passesCuts = false;
+        }
+      }
+
+      // Reference condition: deltaMC > minimum.
+      if (cuts.applyDeltaMCCut) {
+        if (std::isnan(deltaMC->at(i)) ||
+            deltaMC->at(i) <= cuts.minDeltaMC) {
+          passesCuts = false;
+        }
+      }
+
+      // Optional condition: |production vertex z| <= maximum.
+      if (cuts.applyVertexZCut) {
+        if (!std::isfinite(vertexZ->at(i)) ||
+            std::abs(vertexZ->at(i)) > cuts.maxAbsVertexZ) {
+          passesCuts = false;
+        }
+      }
+
+      if (!passesCuts) {
+        continue;
+      }
+
+      const int bin =
+          static_cast<int>((radius - minR) / binWidth);
+
+      if (bin < 0 || bin >= nBins) {
+        continue;
+      }
+
+      // The particle passes the denominator selection.
+      ++denominator[bin];
+
+      // ---------- Check whether the particle was reconstructed ----------
+      bool reconstructed = false;
+
+      const auto& efficiencies = matchEfficiency->at(i);
+      const auto& purities = matchPurity->at(i);
+
+      const std::size_t nMatches =
+          std::min(efficiencies.size(), purities.size());
+
+      for (std::size_t match = 0; match < nMatches; ++match) {
+        const float efficiency = efficiencies[match];
+        const float purity = purities[match];
+
+        if (!std::isfinite(efficiency) ||
+            !std::isfinite(purity)) {
+          continue;
+        }
+
+        if (efficiencyDefinition == 1) {
+          // Definition 1:
+          // at least one track with sufficient purity.
+          if (purity >= purityThreshold) {
+            reconstructed = true;
+            break;
+          }
+        } else {
+          // Definition 2:
+          // at least 50% of the particle hits are found and
+          // at least 50% of the track hits belong to the particle.
+          if (efficiency >= 0.5f && purity >= 0.5f) {
+            reconstructed = true;
+            break;
+          }
+        }
+      }
+
+      if (reconstructed) {
+        ++numerator[bin];
+      }
+    }
+  }
+
+  tree->ResetBranchAddresses();
+
+  // ---------- Build the graph ----------
+  auto* graph = new TGraphErrors();
+  graph->SetName(graphName);
+  graph->SetTitle(graphName);
+
+  int graphPoint = 0;
+
+  for (int bin = 0; bin < nBins; ++bin) {
+    if (denominator[bin] == 0) {
+      continue;
+    }
+
+    const double x =
+        minR + (static_cast<double>(bin) + 0.5) * binWidth;
+
+    const double efficiency =
+        static_cast<double>(numerator[bin]) /
+        static_cast<double>(denominator[bin]);
+
+    const double uncertainty =
+        std::sqrt(
+            efficiency * (1.0 - efficiency) /
+            static_cast<double>(denominator[bin]));
+
+    graph->SetPoint(graphPoint, x, efficiency);
+    graph->SetPointError(
+        graphPoint,
+        0.5 * binWidth,
+        uncertainty);
+
+    ++graphPoint;
+  }
+
+  return graph;
+}
+
+TCanvas* drawEfficiencyCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin, double xMax,
+                              bool logX) {
   if (!g)
     return nullptr;
 
   gStyle->SetOptStat(0);
 
   TCanvas* c = new TCanvas(canvasName, title, 800, 600);
-  c->SetLogx();
+
+  if (logX) {
+    c->SetLogx();
+  }
 
   g->SetMarkerStyle(20);
   g->SetLineWidth(2);
@@ -647,7 +875,7 @@ TCanvas* drawPullCanvas(TH1F* h, const char* canvasName, const char* title) {
     gaus->SetLineColor(kRed);
     gaus->SetLineWidth(2);
 
-    h->Fit(gaus, "R");
+    h->Fit(gaus, "R+");
   }
 
   c->Update();
@@ -666,4 +894,82 @@ TCanvas* drawPullCanvas(TH1F* h, const char* canvasName, const char* title) {
 
   return c;
 }
+
+/**
+ * @brief Fill a histogram from a vector<float> tree branch.
+ *
+ * Non-finite values are skipped. The function does not apply any
+ * physics-specific selection or fit.
+ */
+TH1F* makeValueHistogram(
+    TTree* tree,
+    const char* branchName,
+    const char* histName,
+    const char* title,
+    int nBins,
+    double xMin,
+    double xMax) {
+
+  if (!tree)
+    return nullptr;
+
+  auto* branch = tree->GetBranch(branchName);
+  if (!branch)
+    return nullptr;
+
+  std::vector<float>* values = nullptr;
+  branch->SetAddress(&values);
+
+  auto* histogram =
+      new TH1F(histName, title, nBins, xMin, xMax);
+
+  const Long64_t nEntries = tree->GetEntries();
+
+  for (Long64_t entry = 0; entry < nEntries; ++entry) {
+    branch->GetEntry(entry);
+
+    if (!values)
+      continue;
+
+    for (const float value : *values) {
+      if (std::isfinite(value))
+        histogram->Fill(value);
+    }
+  }
+
+  branch->ResetAddress();
+  return histogram;
+}
+
+/**
+ * @brief Draw a generic histogram without fitting its distribution.
+ *
+ * This is kept separate from drawPullCanvas because pull distributions may
+ * be fitted with a Gaussian, while reduced chi2 is not generally Gaussian.
+ */
+TCanvas* drawHistogramCanvas(
+    TH1F* histogram,
+    const char* canvasName,
+    const char* title,
+    bool logY) {
+
+  if (!histogram)
+    return nullptr;
+
+  gStyle->SetOptStat(1110);
+
+  auto* canvas =
+      new TCanvas(canvasName, title, 900, 700);
+
+  if (logY)
+    canvas->SetLogy();
+
+  histogram->SetTitle(title);
+  histogram->SetLineWidth(2);
+  histogram->Draw();
+
+  canvas->Update();
+  return canvas;
+}
+
 } // namespace TrackingValidationPlots

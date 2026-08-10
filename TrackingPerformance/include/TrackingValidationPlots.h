@@ -43,6 +43,38 @@ struct EffectiveSigmaResult {
   std::size_t nEntries = 0;
 };
 
+/// Optional truth-level selections for efficiency versus production radius.
+struct EfficiencyVsVertexRCuts {
+  bool applyPtCut = false;
+  float minPt = 0.f; // GeV
+
+  bool applyThetaCut = false;
+  float minTheta = 0.f; // rad
+  float maxTheta = 0.f; // rad
+
+  bool applyDeltaMCCut = false;
+  float minDeltaMC = 0.f; // angular distance in eta-phi space
+
+  bool applyVertexZCut = false;
+  float maxAbsVertexZ = 0.f; // mm
+};
+
+/**
+ * @brief Build tracking efficiency as a function of MC production radius.
+ *
+ * Optional truth-level selections are supplied through cuts. The efficiency
+ * definition is shared with makeEfficiencyVsMomentum().
+ */
+TGraphErrors* makeEfficiencyVsVertexR(
+    TTree* tree,
+    const char* graphName,
+    int efficiencyDefinition,
+    float purityThreshold,
+    const EfficiencyVsVertexRCuts& cuts,
+    double minR,
+    double maxR,
+    double binWidth);
+
 /// Compute sigma_eff as half-width of the narrowest interval containing "fraction"of entries
 EffectiveSigmaResult computeEffectiveSigma(std::vector<double> values, double fraction = 0.6827);
 
@@ -122,9 +154,37 @@ TGraphErrors* makeEfficiencyVsMomentum(TTree* finderTree, const char* graphName,
                                        double purityThreshold, double pMin = 0.1, double pMax = 100.0,
                                        double logStep = 0.15);
 
-/// Draw the tracking-efficiency graph on a logarithmic momentum axis
+/// Draw a tracking-efficiency graph, optionally using a logarithmic x-axis
 TCanvas* drawEfficiencyCanvas(TGraphErrors* g, const char* canvasName, const char* title, double xMin = 0.1,
-                              double xMax = 100.0);
+                              double xMax = 100.0, bool logX = true);
+
+/**
+ * @brief Build a histogram from a vector<float> branch.
+ *
+ * The function reads all entries from the requested branch and fills the
+ * histogram with finite values. It is used for generic fitter diagnostics,
+ * including the reduced-chi2 distribution.
+ */
+
+TH1F* makeValueHistogram(
+    TTree* tree,
+    const char* branchName,
+    const char* histName,
+    const char* title,
+    int nBins = 100,
+    double xMin = 0.0,
+    double xMax = 10.0);
+    
+/**
+ * @brief Draw a generic histogram without applying a fit.
+ *
+ * The y-axis can optionally be displayed on a logarithmic scale.
+ */
+TCanvas* drawHistogramCanvas(
+    TH1F* histogram,
+    const char* canvasName,
+    const char* title,
+    bool logY = false);
 
 } // namespace TrackingValidationPlots
 

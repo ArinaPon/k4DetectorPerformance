@@ -214,6 +214,79 @@ parser.add_argument(
     default=0.75,
     help="Purity threshold used when FinderEfficiencyDefinition = 1",
 )
+# -----------------------------------------------------------------------------
+# Efficiency versus displaced-track production radius
+# -----------------------------------------------------------------------------
+
+parser.add_argument(
+    "--makeEfficiencyVsVertexR",
+    type=str2bool,
+    default=True,
+    help="Produce the tracking-efficiency-versus-production-radius plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyApplyPtCut",
+    type=str2bool,
+    default=False,
+    help="Apply a minimum pT cut to the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyMinPt",
+    type=float,
+    default=1.0,
+    help="Minimum MC-particle pT [GeV] for the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyApplyThetaCut",
+    type=str2bool,
+    default=False,
+    help="Apply a polar-angle cut to the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyMinThetaDeg",
+    type=float,
+    default=10.0,
+    help="Minimum MC-particle theta [deg] for the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyMaxThetaDeg",
+    type=float,
+    default=170.0,
+    help="Maximum MC-particle theta [deg] for the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyApplyDeltaMCCut",
+    type=str2bool,
+    default=False,
+    help="Apply a minimum deltaMC cut to the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyMinDeltaMC",
+    type=float,
+    default=0.02,
+    help="Minimum deltaMC for the efficiency-versus-vertex-R plot",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyApplyVertexZCut",
+    type=str2bool,
+    default=False,
+    help="Apply a maximum absolute production-vertex-z cut",
+)
+
+parser.add_argument(
+    "--vertexREfficiencyMaxAbsVertexZ",
+    type=float,
+    default=30.0,
+    help="Maximum absolute production vertex z [mm]",
+)
 
 
 # -----------------------------------------------------------------------------
@@ -272,13 +345,13 @@ parser.add_argument(
 
 parser.add_argument(
     "--dchDigiCollections",
-    default="DCHDigis",
+    default="DCH_DigiCollection",
     help="Comma-separated DCH digi collection names used by the track finder when --useDCH true",
 )
 
 parser.add_argument(
     "--finderTracks",
-    default="GGTFTracks",
+    default="CDCHTracks",
     help="Finder track collection name",
 )
 
@@ -372,7 +445,34 @@ if args.runValidation and args.mode in [0, 2] and not args.runFitter:
         "Assuming fitted tracks are already present in the input file."
     )
 
+if args.vertexREfficiencyMinPt < 0.0:
+    parser.error("--vertexREfficiencyMinPt must be non-negative")
 
+if not (
+    0.0 <= args.vertexREfficiencyMinThetaDeg
+    < args.vertexREfficiencyMaxThetaDeg
+    <= 180.0
+):
+    parser.error(
+        "Vertex-R theta limits must satisfy "
+        "0 <= minTheta < maxTheta <= 180 degrees"
+    )
+
+if args.vertexREfficiencyMinDeltaMC < 0.0:
+    parser.error("--vertexREfficiencyMinDeltaMC must be non-negative")
+
+if args.vertexREfficiencyMaxAbsVertexZ < 0.0:
+    parser.error("--vertexREfficiencyMaxAbsVertexZ must be non-negative")
+
+if (
+    args.runValidation
+    and args.mode == 2
+    and args.makeEfficiencyVsVertexR
+):
+    print(
+        "WARNING: --makeEfficiencyVsVertexR is ignored in fitter-only mode "
+        "because finder association information is not filled"
+    )
 # =============================================================================
 # Collection names
 # =============================================================================
@@ -428,6 +528,16 @@ print(f"FinderTracks:                {FINDER_TRACK_COLLECTION}")
 print(f"FittedTracks:                {FITTED_TRACK_COLLECTION}")
 print(f"PerfectTracks:               {PERFECT_TRACK_COLLECTION}")
 print(f"PerfectFittedTracks:         {PERFECT_FITTED_TRACK_COLLECTION}")
+print(f"makeEfficiencyVsVertexR:     {args.makeEfficiencyVsVertexR}")
+print(f"vertexR apply pT cut:        {args.vertexREfficiencyApplyPtCut}")
+print(f"vertexR minimum pT [GeV]:    {args.vertexREfficiencyMinPt}")
+print(f"vertexR apply theta cut:     {args.vertexREfficiencyApplyThetaCut}")
+print(f"vertexR theta minimum [deg]: {args.vertexREfficiencyMinThetaDeg}")
+print(f"vertexR theta maximum [deg]: {args.vertexREfficiencyMaxThetaDeg}")
+print(f"vertexR apply deltaMC cut:   {args.vertexREfficiencyApplyDeltaMCCut}")
+print(f"vertexR minimum deltaMC:     {args.vertexREfficiencyMinDeltaMC}")
+print(f"vertexR apply vertex-z cut:  {args.vertexREfficiencyApplyVertexZCut}")
+print(f"vertexR max |vertex z| [mm]: {args.vertexREfficiencyMaxAbsVertexZ}")
 
 
 # =============================================================================
@@ -648,7 +758,7 @@ if args.runFitter:
     reco_fitter.InitializationType = 1
 
     reco_fitter.SkipTrackOrdering = False
-    reco_fitter.ListOfTypesToSkip = [0]
+    reco_fitter.ListOfTypesToSkip = []
     reco_fitter.FilterTrackHits = True
     reco_fitter.RunCalorimeterExtrapolation = False
 
@@ -744,6 +854,23 @@ if args.runValidation:
     val.DoPerfectFit = args.doPerfectFit and args.mode in [0, 2]
     val.FinderEfficiencyDefinition = args.finderEfficiencyDefinition
     val.FinderPurityThreshold = args.finderPurityThreshold
+    
+
+    val.MakeEfficiencyVsVertexR = (
+    args.makeEfficiencyVsVertexR and args.mode in [0, 1])
+
+    val.VertexREfficiencyApplyPtCut = (args.vertexREfficiencyApplyPtCut)
+    val.VertexREfficiencyMinPt = (args.vertexREfficiencyMinPt)
+
+    val.VertexREfficiencyApplyThetaCut = (args.vertexREfficiencyApplyThetaCut)
+    val.VertexREfficiencyMinThetaDeg = (args.vertexREfficiencyMinThetaDeg)
+    val.VertexREfficiencyMaxThetaDeg = (args.vertexREfficiencyMaxThetaDeg)
+
+    val.VertexREfficiencyApplyDeltaMCCut = (args.vertexREfficiencyApplyDeltaMCCut)
+    val.VertexREfficiencyMinDeltaMC = (args.vertexREfficiencyMinDeltaMC)
+
+    val.VertexREfficiencyApplyVertexZCut = (args.vertexREfficiencyApplyVertexZCut)
+    val.VertexREfficiencyMaxAbsVertexZ = (args.vertexREfficiencyMaxAbsVertexZ)
 
     val.MCParticles = [MC_COLLECTION]
     val.HitSimLinks = HIT_SIM_LINK_COLLECTIONS
