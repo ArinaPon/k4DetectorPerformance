@@ -115,7 +115,7 @@ Additional plots may be added in future developments.
 
 To evaluate finder performance, each reconstructed track is matched to the truth particle with which it shares the largest number of hits.
 
-For each particle-track pair, the algorithm stores two standard hit-based quantities:
+For each particle -track pair, the algorithm stores two standard hit-based quantities:
 
 - **track hit purity**: the fraction of hits on the reconstructed track that originate from the matched truth particle;
 - **track hit efficiency**: the fraction of the truth-particle hits that are recovered in the reconstructed track.
@@ -238,5 +238,485 @@ fittedTracks = FittedTracks
 ```
 
 The boolean steering options accept both `true/false` and `1/0` inputs.
+
+---
+
+## Plot recipes
+
+The summary plots produced by `TrackingValidation` are written directly to the validation ROOT file during `finalize()`.
+
+The recipes below describe how to reproduce the different plot families and which ROOT objects are produced.
+
+### Common validation configuration
+
+For an already reconstructed EDM4hep sample, the validation can be run without repeating digitization, track finding, or track fitting:
+
+```bash
+k4run runTrackingValidation.py \
+  --inputFile <reconstructed.root> \
+  --validationFile validation.root \
+  --compactFile <detector-geometry.xml> \
+  --runDigi false \
+  --runFinder false \
+  --runFitter false \
+  --runPerfectTracking false \
+  --runValidation true \
+  --mode 0 \
+  --doPerfectFit false \
+  --mcParticles <MC-particle-collection> \
+  --hitSimLinks <hit-to-sim-link-collections> \
+  --finderTracks <finder-track-collection> \
+  --fittedTracks <fitted-track-collection>
+```
+
+For the CLD sample used in the CI test, the corresponding collection names are:
+
+```text
+mcParticles  = MCPhysicsParticles
+hitSimLinks  = VXDTrackerHitRelations
+finderTracks = SiTracks
+fittedTracks = FittedTracks
+```
+
+The validation mode determines which plot families are produced:
+
+```text
+Mode = 0   finder and fitter validation
+Mode = 1   finder validation only
+Mode = 2   fitter validation only
+```
+
+---
+
+### Tracking efficiency vs momentum
+
+The tracking-efficiency-versus-momentum plot is produced from the `finder_particle_to_tracks` tree.
+
+It requires finder validation, i.e. `Mode = 0` or `Mode = 1`.
+
+The matching definition is selected with:
+
+```bash
+--finderEfficiencyDefinition 1 \
+--finderPurityThreshold 0.75
+```
+
+For `FinderEfficiencyDefinition = 1`, a truth particle is counted as reconstructed if at least one associated finder track satisfies
+
+```text
+purity >= FinderPurityThreshold
+```
+
+Alternatively,
+
+```bash
+--finderEfficiencyDefinition 2
+```
+
+requires at least one associated track satisfying
+
+```text
+purity >= 0.5
+efficiency >= 0.5
+```
+
+Example:
+
+```bash
+k4run runTrackingValidation.py \
+  --inputFile <reconstructed.root> \
+  --validationFile validation.root \
+  --compactFile <detector-geometry.xml> \
+  --runDigi false \
+  --runFinder false \
+  --runFitter false \
+  --runValidation true \
+  --mode 1 \
+  --finderEfficiencyDefinition 1 \
+  --finderPurityThreshold 0.75 \
+  --mcParticles <MC-particle-collection> \
+  --hitSimLinks <hit-to-sim-link-collections> \
+  --finderTracks <finder-track-collection>
+```
+
+The following objects are written to the validation ROOT file:
+
+```text
+g_efficiency_vs_p
+c_efficiency_vs_p
+```
+
+The underlying information is stored in:
+
+```text
+finder_particle_to_tracks
+```
+
+---
+
+### Tracking efficiency vs production radius
+
+The tracking-efficiency-versus-production-radius plot is intended for studies of displaced-track reconstruction.
+
+Enable the plot with:
+
+```bash
+--makeEfficiencyVsVertexR true
+```
+
+It requires finder validation (`Mode = 0` or `Mode = 1`).
+
+A meaningful efficiency-versus-radius curve requires an input sample containing particles produced at non-zero transverse displacement. A prompt sample produced at the interaction point will populate only the first production-radius bin.
+
+The current plotting range is
+
+```text
+0 <= vertexR < 1000 mm
+```
+
+with a bin width of `25 mm`.
+
+#### Optional transverse-momentum selection
+
+Enable the selection with:
+
+```bash
+--vertexREfficiencyApplyPtCut true \
+--vertexREfficiencyMinPt 1.0
+```
+
+which applies
+
+```text
+pT > 1 GeV
+```
+
+#### Optional polar-angle selection
+
+Enable the selection with:
+
+```bash
+--vertexREfficiencyApplyThetaCut true \
+--vertexREfficiencyMinThetaDeg 10.0 \
+--vertexREfficiencyMaxThetaDeg 170.0
+```
+
+which applies
+
+```text
+10 deg < theta < 170 deg
+```
+
+#### Optional MC-particle separation selection
+
+Enable the selection with:
+
+```bash
+--vertexREfficiencyApplyDeltaMCCut true \
+--vertexREfficiencyMinDeltaMC 0.02
+```
+
+which applies
+
+```text
+deltaMC > 0.02
+```
+
+Here, `deltaMC` is the minimum angular distance in eta-phi space between the selected MC particle and another selected MC particle.
+
+#### Optional production-vertex-z selection
+
+Enable the selection with:
+
+```bash
+--vertexREfficiencyApplyVertexZCut true \
+--vertexREfficiencyMaxAbsVertexZ 30.0
+```
+
+which applies
+
+```text
+|vertexZ| <= 30 mm
+```
+
+A complete example with all selections enabled is:
+
+```bash
+k4run runTrackingValidation.py \
+  --inputFile <reconstructed-displaced-sample.root> \
+  --validationFile validation_displaced.root \
+  --compactFile <detector-geometry.xml> \
+  --runDigi false \
+  --runFinder false \
+  --runFitter false \
+  --runValidation true \
+  --mode 1 \
+  --finderEfficiencyDefinition 1 \
+  --finderPurityThreshold 0.75 \
+  --makeEfficiencyVsVertexR true \
+  --vertexREfficiencyApplyPtCut true \
+  --vertexREfficiencyMinPt 1.0 \
+  --vertexREfficiencyApplyThetaCut true \
+  --vertexREfficiencyMinThetaDeg 10.0 \
+  --vertexREfficiencyMaxThetaDeg 170.0 \
+  --vertexREfficiencyApplyDeltaMCCut true \
+  --vertexREfficiencyMinDeltaMC 0.02 \
+  --vertexREfficiencyApplyVertexZCut true \
+  --vertexREfficiencyMaxAbsVertexZ 30.0 \
+  --mcParticles <MC-particle-collection> \
+  --hitSimLinks <hit-to-sim-link-collections> \
+  --finderTracks <finder-track-collection>
+```
+
+The following objects are written:
+
+```text
+g_efficiency_vs_vertexR
+c_efficiency_vs_vertexR
+```
+
+The truth-level quantities used for this plot are stored in:
+
+```text
+finder_particle_to_tracks/pT
+finder_particle_to_tracks/theta
+finder_particle_to_tracks/vertexR
+finder_particle_to_tracks/vertexZ
+finder_particle_to_tracks/deltaMC
+```
+
+---
+
+### Track-parameter resolutions vs momentum
+
+Fitter validation automatically produces resolution plots for the five helix parameters:
+
+```text
+d0
+z0
+phi
+omega
+tanLambda
+```
+
+These plots require fitter validation (`Mode = 0` or `Mode = 2`). No additional plot-specific steering option is required.
+
+A fitter-only validation run can be performed with:
+
+```bash
+k4run runTrackingValidation.py \
+  --inputFile <reconstructed.root> \
+  --validationFile validation.root \
+  --compactFile <detector-geometry.xml> \
+  --runDigi false \
+  --runFinder false \
+  --runFitter false \
+  --runValidation true \
+  --mode 2 \
+  --doPerfectFit false \
+  --mcParticles <MC-particle-collection> \
+  --hitSimLinks <hit-to-sim-link-collections> \
+  --fittedTracks <fitted-track-collection>
+```
+
+The following graphs and canvases are written:
+
+```text
+g_d0_resolution_vs_p
+c_d0_resolution_vs_p
+
+g_z0_resolution_vs_p
+c_z0_resolution_vs_p
+
+g_phi_resolution_vs_p
+c_phi_resolution_vs_p
+
+g_omega_resolution_vs_p
+c_omega_resolution_vs_p
+
+g_tanlambda_resolution_vs_p
+c_tanlambda_resolution_vs_p
+```
+
+The corresponding residual branches are:
+
+```text
+fitter_vs_mc/resD0
+fitter_vs_mc/resZ0
+fitter_vs_mc/resPhi
+fitter_vs_mc/resOmega
+fitter_vs_mc/resTanLambda
+```
+
+The resolution in each momentum bin is defined using the effective sigma, calculated as half the width of the narrowest interval containing `68.27%` of the residual distribution.
+
+---
+
+### Momentum and transverse-momentum resolutions
+
+The fitter-validation run also produces the relative total-momentum and transverse-momentum resolutions.
+
+The corresponding residual quantities are
+
+```text
+(p_reco - p_ref) / p_ref
+```
+
+and
+
+```text
+(pT_reco - pT_ref) / pT_ref
+```
+
+respectively.
+
+No additional steering option is required.
+
+The following objects are written:
+
+```text
+g_p_resolution_vs_p
+c_p_resolution_vs_p
+
+g_pt_resolution_vs_p
+c_pt_resolution_vs_p
+```
+
+The underlying quantities are stored in:
+
+```text
+fitter_vs_mc/p_reco
+fitter_vs_mc/p_ref
+fitter_vs_mc/pT_reco
+fitter_vs_mc/pT_ref
+```
+
+---
+
+### Pull distributions
+
+Fitter validation automatically produces pull distributions for the five helix parameters:
+
+```text
+d0
+z0
+phi
+omega
+tanLambda
+```
+
+For a parameter `x`, the pull is defined as
+
+```text
+(x_reco - x_ref) / sigma_x
+```
+
+where `sigma_x` is obtained from the corresponding diagonal element of the fitted track covariance matrix.
+
+No additional steering option is required.
+
+The following histograms are written:
+
+```text
+h_pull_d0
+h_pull_z0
+h_pull_phi
+h_pull_omega
+h_pull_tanlambda
+```
+
+with the corresponding canvases:
+
+```text
+c_h_pull_d0_vs_mc
+c_h_pull_z0_vs_mc
+c_h_pull_phi_vs_mc
+c_h_pull_omega_vs_mc
+c_h_pull_tanlambda_vs_mc
+```
+
+The underlying branches are:
+
+```text
+fitter_vs_mc/pullD0
+fitter_vs_mc/pullZ0
+fitter_vs_mc/pullPhi
+fitter_vs_mc/pullOmega
+fitter_vs_mc/pullTanLambda
+```
+
+For sufficiently populated pull distributions, a Gaussian fit is performed in the central region.
+
+---
+
+### Track-fit chi2/ndf distribution
+
+Fitter validation also produces the reduced-chi2 distribution for MC-associated fitted tracks with a valid track state at the interaction point.
+
+For each track,
+
+```text
+chi2Ndf = chi2 / ndf
+```
+
+is calculated when `chi2` is finite and non-negative and `ndf > 0`.
+
+No additional steering option is required. The plot is produced when fitter validation is enabled (`Mode = 0` or `Mode = 2`).
+
+The following objects are written:
+
+```text
+h_chi2_ndf
+c_chi2_ndf
+```
+
+The underlying fit-quality quantities are stored in:
+
+```text
+fitter_vs_mc/chi2
+fitter_vs_mc/ndf
+fitter_vs_mc/chi2Ndf
+```
+
+The histogram currently contains `100` bins in the range
+
+```text
+0 <= chi2/ndf < 10
+```
+
+---
+
+### Perfect-track comparison
+
+Residuals with respect to perfectly associated fitted tracks can additionally be stored by enabling perfect tracking and perfect-fit validation:
+
+```bash
+--runPerfectTracking true \
+--doPerfectFit true
+```
+
+The resulting comparison is stored in:
+
+```text
+fitter_vs_perfect
+```
+
+When `runPerfectTracking = false`, an already reconstructed input sample may instead provide the perfect fitted-track collection directly through the corresponding steering option.
+
+---
+
+### Inspecting the produced plots
+
+The contents of the validation ROOT file can be listed with:
+
+```bash
+rootls -r validation.root
+```
+
+To list the main summary plots:
+
+```bash
+rootls -r validation.root | grep -Ei "efficiency|resolution|pull|chi2"
+```
 
 
